@@ -84,7 +84,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     companion object {
         private const val TAG = "MainActivity"
         @Volatile var isActive: Boolean = false
-        const val ACTION_STOP_RECORDING = "com.example.sostaxi.ACTION_STOP_RECORDING"
+
         const val TELEGRAM_BOT_TOKEN = "7960834986:AAGr7DfkvN2cRi2FWWqKMVhbmIbu9li6SFE"
         const val TELEGRAM_CHAT_ID = "-4706227781"
         
@@ -94,15 +94,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var liveLocationMessageId: Int? = null
-    // BroadcastReceiver для сигнала остановки (от Quick Settings плитки)
-    private val stopReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_STOP_RECORDING) {
-                // Остановка записи по сигналу (например, повторное нажатие плитки QS)
-                stop()
-            }
-        }
-    }
 
     // Добавим свойство для телеграм-авторизации в класс MainActivity
     private lateinit var telegramAuthHelper: TelegramAuthHelper
@@ -164,8 +155,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             showSettingsDialog()
         }
 
-        // Регистрируем ресивер для остановки записи (сигнал от QS плитки)
-        registerReceiver(stopReceiver, IntentFilter(ACTION_STOP_RECORDING), Context.RECEIVER_NOT_EXPORTED)
+
 
         startStopButton.setOnClickListener {
             if (!isActive) {
@@ -173,11 +163,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             } else {
                 stop()
             }
-        }
-
-        // Если активность запущена из плитки QS с намерением начать запись сразу
-        if (intent?.getBooleanExtra("startImmediately", false) == true) {
-            startStopButton.post { startStopButton.performClick() }
         }
     }
 
@@ -795,7 +780,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(stopReceiver)
         ioScope.cancel()
         stop()
         
