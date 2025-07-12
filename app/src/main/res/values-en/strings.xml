@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SOSTaxi</string>
+    
+    <string-array name="work_modes">
+        <item>Video segments</item>
+        <item>Video streaming</item>
+    </string-array>
+    
+    <string-array name="languages">
+        <item>Русский</item>
+        <item>English</item>
+        <item>Polski</item>
+    </string-array>
+    
+    <string-array name="language_codes">
+        <item>ru</item>
+        <item>en</item>
+        <item>pl</item>
+    </string-array>
+    
+    <!-- Main interface strings -->
+    <string name="settings">Settings</string>
+    <string name="work_mode">Work mode</string>
+    <string name="telegram_channel">Telegram channel</string>
+    <string name="telegram_auth">Telegram authorization</string>
+    <string name="login_another_account">Login to another Telegram account</string>
+    <string name="contact_selection">Contact selection</string>
+    <string name="user_info">User information</string>
+    <string name="language_setting">App language</string>
+    <string name="done">Done</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="search_contacts">Search contacts...</string>
+    <string name="select_contacts">Select contacts</string>
+    <string name="no_contacts_found">No contacts found</string>
+    
+    <!-- User fields -->
+    <string name="first_name">First name</string>
+    <string name="last_name">Last name</string>
+    <string name="registration_number">Registration number</string>
+    <string name="taxi_board_number">Taxi board number</string>
+    <string name="car_brand">Car brand</string>
+    <string name="car_color">Car color</string>
+    <string name="phone_from_telegram">Phone (from Telegram)</string>
+    
+    <!-- Telegram authorization -->
+    <string name="telegram_auth_title">Telegram Authorization</string>
+    <string name="enter_phone_description">Enter your phone number registered in Telegram</string>
+    <string name="phone_hint">+48 (XXX) XXX-XXX</string>
+    <string name="send_code">Send code</string>
+    <string name="enter_code_title">Enter confirmation code</string>
+    <string name="enter_code_description">Code sent to your phone number</string>
+    <string name="code_hint">Confirmation code</string>
+    <string name="confirm">Confirm</string>
+    
+    <!-- Messages -->
+    <string name="auth_success">Authorization successful</string>
+    <string name="auth_error">Authorization error</string>
+    <string name="invalid_phone">Invalid phone number</string>
+    <string name="invalid_code">Invalid confirmation code</string>
+    <string name="restart_required">App restart required to apply language</string>
+</resources> 

@@ -1,0 +1,59 @@
+package com.example.sostaxi
+
+import android.app.PendingIntent
+import android.service.quicksettings.Tile
+import android.service.quicksettings.TileService
+import android.content.Intent
+import android.util.Log
+
+class SOSTaxiTileService : TileService() {
+
+    private val TAG = "SOSTaxiTileService"
+
+    override fun onStartListening() {
+        super.onStartListening()
+        try {
+            // Устанавливаем состояние плитки в соответствии с состоянием записи
+        qsTile.state = if (MainActivity.isActive) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        qsTile.updateTile()
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка при инициализации плитки: ${e.message}")
+        }
+    }
+
+    override fun onClick() {
+        try {
+        super.onClick()
+            
+            // Получаем текущее состояние плитки
+            val tile = qsTile
+            
+            // Если плитка активна - останавливаем запись
+            if (tile.state == Tile.STATE_ACTIVE) {
+                // Отправляем Intent для остановки записи
+                val stopIntent = Intent(this, MainActivity::class.java)
+                stopIntent.action = MainActivity.ACTION_STOP_RECORDING
+                stopIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            sendBroadcast(stopIntent)
+                
+                // Обновляем состояние плитки на неактивное
+                tile.state = Tile.STATE_INACTIVE
+                tile.updateTile()
+            } 
+            // Если плитка неактивна - начинаем запись
+            else {
+                // Запуск MainActivity с флагом немедленного начала записи
+                val startIntent = Intent(this, MainActivity::class.java)
+                startIntent.putExtra("startImmediately", true)
+                startIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivityAndCollapse(startIntent)
+                
+                // Обновляем состояние плитки на активное
+                tile.state = Tile.STATE_ACTIVE
+                tile.updateTile()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка при обработке плитки быстрых настроек: ${e.message}")
+        }
+    }
+}

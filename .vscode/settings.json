@@ -1,0 +1,36 @@
+{
+    "aichat.contextSources": [
+        "web",
+        "codebase", 
+        "terminal",
+        "problems"
+    ],
+    "aichat.autoIncludeWorkspace": true,
+    "aichat.includeFolderNames": true,
+    "aichat.includeFileTypes": [
+        "java",
+        "kt",
+        "gradle",
+        "xml",
+        "json",
+        "md",
+        "txt",
+        "properties",
+        "sh"
+    ],
+    "cursor.chat.autoFocusChat": false,
+    "cursor.chat.persistContext": true,
+    "cursor.general.enableAiChatMemory": true,
+    "cursor.cpp.enableSuggestions": true,
+    "cursor.java.enableSuggestions": true,
+    "cursor.kotlin.enableSuggestions": true,
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/build": true,
+        "**/.gradle": true
+    },
+    "cursor.chat.includeCodebaseContext": true,
+    "cursor.chat.includeTerminalContext": true,
+    "cursor.chat.includeProblemsContext": true,
+    "cursor.chat.includeWebContext": true
+} 

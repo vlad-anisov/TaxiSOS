@@ -1,0 +1,25 @@
+# Cursor AI Configuration for SOSTaxi Project
+# Автоматические настройки контекста для проекта
+
+# AI Chat Context Settings
+CURSOR_AI_CONTEXT_SOURCES=web,codebase,terminal,problems
+CURSOR_AI_AUTO_WORKSPACE=true
+CURSOR_AI_PERSIST_CONTEXT=true
+CURSOR_AI_INCLUDE_FOLDERS=true
+
+# File Types for AI Context
+CURSOR_AI_FILE_TYPES=java,kt,gradle,xml,json,md,txt,properties,sh
+
+# Project Specific Settings
+CURSOR_PROJECT_NAME=SOSTaxi
+CURSOR_PROJECT_TYPE=android
+CURSOR_BUILD_SYSTEM=gradle
+
+# Memory and Performance
+CURSOR_AI_MEMORY=true
+CURSOR_AUTO_SUGGESTIONS=true
+
+# Language Support
+CURSOR_JAVA_SUPPORT=true
+CURSOR_KOTLIN_SUPPORT=true
+CURSOR_GRADLE_SUPPORT=true 

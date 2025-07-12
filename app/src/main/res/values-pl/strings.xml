@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SOSTaxi</string>
+    
+    <string-array name="work_modes">
+        <item>Segmenty wideo</item>
+        <item>Transmisja wideo</item>
+    </string-array>
+    
+    <string-array name="languages">
+        <item>Русский</item>
+        <item>English</item>
+        <item>Polski</item>
+    </string-array>
+    
+    <string-array name="language_codes">
+        <item>ru</item>
+        <item>en</item>
+        <item>pl</item>
+    </string-array>
+    
+    <!-- Główne ciągi interfejsu -->
+    <string name="settings">Ustawienia</string>
+    <string name="work_mode">Tryb pracy</string>
+    <string name="telegram_channel">Kanał Telegram</string>
+    <string name="telegram_auth">Autoryzacja Telegram</string>
+    <string name="login_another_account">Zaloguj się na inne konto Telegram</string>
+    <string name="contact_selection">Wybór kontaktów</string>
+    <string name="user_info">Informacje o użytkowniku</string>
+    <string name="language_setting">Język aplikacji</string>
+    <string name="done">Gotowe</string>
+    <string name="save">Zapisz</string>
+    <string name="cancel">Anuluj</string>
+    <string name="search_contacts">Szukaj kontaktów...</string>
+    <string name="select_contacts">Wybierz kontakty</string>
+    <string name="no_contacts_found">Nie znaleziono kontaktów</string>
+    
+    <!-- Pola użytkownika -->
+    <string name="first_name">Imię</string>
+    <string name="last_name">Nazwisko</string>
+    <string name="registration_number">Numer rejestracyjny</string>
+    <string name="taxi_board_number">Numer pokładowy taksówki</string>
+    <string name="car_brand">Marka samochodu</string>
+    <string name="car_color">Kolor samochodu</string>
+    <string name="phone_from_telegram">Telefon (z Telegram)</string>
+    
+    <!-- Autoryzacja Telegram -->
+    <string name="telegram_auth_title">Autoryzacja Telegram</string>
+    <string name="enter_phone_description">Wprowadź swój numer telefonu zarejestrowany w Telegram</string>
+    <string name="phone_hint">+48 (XXX) XXX-XXX</string>
+    <string name="send_code">Wyślij kod</string>
+    <string name="enter_code_title">Wprowadź kod potwierdzenia</string>
+    <string name="enter_code_description">Kod wysłany na Twój numer telefonu</string>
+    <string name="code_hint">Kod potwierdzenia</string>
+    <string name="confirm">Potwierdź</string>
+    
+    <!-- Wiadomości -->
+    <string name="auth_success">Autoryzacja pomyślna</string>
+    <string name="auth_error">Błąd autoryzacji</string>
+    <string name="invalid_phone">Nieprawidłowy numer telefonu</string>
+    <string name="invalid_code">Nieprawidłowy kod potwierdzenia</string>
+    <string name="restart_required">Wymagane ponowne uruchomienie aplikacji, aby zastosować język</string>
+</resources> 

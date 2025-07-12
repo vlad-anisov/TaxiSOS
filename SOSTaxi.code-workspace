@@ -1,0 +1,59 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "aichat.contextSources": [
+            "web",
+            "codebase", 
+            "terminal",
+            "problems"
+        ],
+        "aichat.autoIncludeWorkspace": true,
+        "aichat.includeFolderNames": true,
+        "aichat.includeFileTypes": [
+            "java",
+            "kt",
+            "gradle",
+            "xml",
+            "json",
+            "md",
+            "txt",
+            "properties",
+            "sh"
+        ],
+        "cursor.chat.autoFocusChat": false,
+        "cursor.chat.persistContext": true,
+        "cursor.general.enableAiChatMemory": true,
+        "cursor.cpp.enableSuggestions": true,
+        "cursor.java.enableSuggestions": true,
+        "cursor.kotlin.enableSuggestions": true,
+        "cursor.chat.includeCodebaseContext": true,
+        "cursor.chat.includeTerminalContext": true,
+        "cursor.chat.includeProblemsContext": true,
+        "cursor.chat.includeWebContext": true,
+        "files.exclude": {
+            "**/node_modules": true,
+            "**/build": true,
+            "**/.gradle": true,
+            "**/tdlib-*": false,
+            "**/jniLibs": false
+        },
+        "java.configuration.updateBuildConfiguration": "automatic",
+        "java.compile.nullAnalysis.mode": "automatic",
+        "terminal.integrated.defaultProfile.osx": "zsh",
+        "terminal.integrated.automationProfile.osx": {
+            "path": "/bin/zsh"
+        }
+    },
+    "extensions": {
+        "recommendations": [
+            "ms-vscode.vscode-java-pack",
+            "mathiasfrohlich.kotlin",
+            "vscjava.vscode-gradle",
+            "redhat.vscode-xml"
+        ]
+    }
+} 

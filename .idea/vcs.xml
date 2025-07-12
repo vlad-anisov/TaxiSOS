@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/tdlib-latest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/tdlib-latest/td" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/tdlib-official" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/tdlib-official-latest" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/tdlib_backup" vcs="Git" />
+  </component>
+</project>

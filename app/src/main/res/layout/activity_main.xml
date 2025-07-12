@@ -1,0 +1,26 @@
+<!-- Разметка основного экрана: вертикальный LinearLayout с переключателем и кнопкой -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+    <SurfaceView
+        android:id="@+id/hiddenPreview"
+        android:layout_width="100dp"
+        android:layout_height="100dp"
+        android:visibility="gone" />
+    <!-- Переключатель для настройки "Сохранять видео" -->
+    <Switch
+        android:id="@+id/switchSave"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Сохранять видео" />
+    <!-- Кнопка для запуска/остановки записи -->
+    <Button
+        android:id="@+id/buttonToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Начать запись"
+        android:textColor="@android:color/black"
+        android:layout_marginTop="24dp" />
+</LinearLayout>
