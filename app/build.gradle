@@ -8,7 +8,7 @@ android {
     
     defaultConfig {
         applicationId "com.example.sostaxi"
-        minSdkVersion 21
+        minSdkVersion 24  // Обновлено для поддержки Quick Settings Tiles
         targetSdkVersion 34
         versionCode 1
         versionName "1.0"

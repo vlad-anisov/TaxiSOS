@@ -35,6 +35,12 @@
     <string name="select_contacts">Select contacts</string>
     <string name="no_contacts_found">No contacts found</string>
     
+    <!-- Quick launch tiles -->
+    <string name="tile_streaming">🎦 Live streaming</string>
+    <string name="tile_video_segments">📹 Video segments</string>
+    <string name="tile_stop_streaming">🔴 Stop streaming</string>
+    <string name="tile_stop_recording">🔴 Stop recording</string>
+    
     <!-- User fields -->
     <string name="first_name">First name</string>
     <string name="last_name">Last name</string>

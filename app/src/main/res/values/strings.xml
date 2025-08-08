@@ -35,6 +35,12 @@
     <string name="select_contacts">Выберите контакты</string>
     <string name="no_contacts_found">Контакты не найдены</string>
     
+    <!-- Плитки быстрого запуска -->
+    <string name="tile_streaming">🎦 Прямая трансляция</string>
+    <string name="tile_video_segments">📹 Видеосегменты</string>
+    <string name="tile_stop_streaming">🔴 Остановить трансляцию</string>
+    <string name="tile_stop_recording">🔴 Остановить запись</string>
+    
     <!-- Поля пользователя -->
     <string name="first_name">Имя</string>
     <string name="last_name">Фамилия</string>

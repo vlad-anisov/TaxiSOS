@@ -18,7 +18,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Разрешения для RTMP трансляции -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Добавляем необходимые разрешения для StreamPack -->
@@ -73,6 +72,29 @@
         <service android:name=".RecordingService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone|location" />
+
+        <!-- Quick Settings Tiles -->
+        <service
+            android:name=".StreamingTileService"
+            android:icon="@android:drawable/ic_media_play"
+            android:label="@string/tile_streaming"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".VideoSegmentsTileService"
+            android:icon="@android:drawable/ic_menu_camera"
+            android:label="@string/tile_video_segments"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>

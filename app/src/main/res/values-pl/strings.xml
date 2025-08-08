@@ -35,6 +35,12 @@
     <string name="select_contacts">Wybierz kontakty</string>
     <string name="no_contacts_found">Nie znaleziono kontaktów</string>
     
+    <!-- Kafelki szybkiego uruchomienia -->
+    <string name="tile_streaming">🎦 Transmisja na żywo</string>
+    <string name="tile_video_segments">📹 Segmenty wideo</string>
+    <string name="tile_stop_streaming">🔴 Zatrzymaj transmisję</string>
+    <string name="tile_stop_recording">🔴 Zatrzymaj nagrywanie</string>
+    
     <!-- Pola użytkownika -->
     <string name="first_name">Imię</string>
     <string name="last_name">Nazwisko</string>

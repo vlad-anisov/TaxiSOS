@@ -32,6 +32,7 @@ import android.view.View
 import android.content.res.Configuration
 import android.os.Bundle
 import android.app.ProgressDialog
+import android.view.SurfaceHolder
 
 
 class MainActivity : AppCompatActivity(), ConnectChecker {
@@ -41,9 +42,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private lateinit var settingsButton: Button
     private lateinit var modeSwitch: Spinner
     private lateinit var openGlView: OpenGlView
+    // Добавляем переменную для отслеживания готовности Surface
+    private var isSurfaceReady = false
+    private var pendingAutoStart = false
+    private var pendingWorkMode: WorkMode? = null
+    // Добавляем флаг для контроля закрытия приложения
+    private var isClosingFromTile = false
     // Камеры - отдельные экземпляры для стриминга и записи
     private var streamingCamera: RtmpCamera2? = null
     private var recordingCamera: RtmpCamera2? = null
+    // Добавляем флаги для отслеживания инициализации камер
+    private var isStreamingCameraPrepared = false
+    private var isRecordingCameraPrepared = false
     // Добавляем класс для хранения данных канала
     data class ChannelInfo(val name: String, val url: String, val key: String)
     // Список каналов
@@ -104,14 +114,25 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         super.onCreate(savedInstanceState)
 
         Log.d(TAG, "Инициализация MainActivity...")
+        
+        // Проверяем флаг закрытия - если приложение закрывается, не инициализируем
+        if (isClosingFromTile) {
+            Log.d(TAG, "Приложение закрывается, прерываем инициализацию")
+            finish()
+            return
+        }
 
         loadRtmpSettings()
         loadUserSettings()
         
-        // Инициализируем помощник авторизации Telegram
-        telegramAuthHelper = TelegramAuthHelper(this)
-        // Инициализируем TelegramAuthHelper только один раз
-        initializeTelegramAuth()
+        // Инициализируем помощник авторизации Telegram только если он еще не инициализирован
+        if (!::telegramAuthHelper.isInitialized && !isClosingFromTile) {
+            telegramAuthHelper = TelegramAuthHelper(this)
+            // Инициализируем TelegramAuthHelper только один раз
+            initializeTelegramAuth()
+        } else {
+            Log.d("MainActivity", "TelegramAuthHelper уже инициализирован или приложение закрывается")
+        }
         
         val layout = FrameLayout(this)
         val previewParams = FrameLayout.LayoutParams(1, 1)
@@ -120,6 +141,38 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         openGlView = OpenGlView(this)
         openGlView.setAspectRatioMode(AspectRatioMode.Adjust)
         openGlView.visibility = View.VISIBLE
+        
+        // Добавляем callback для отслеживания готовности Surface
+        openGlView.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                Log.d("MainActivity", "Surface создан")
+                isSurfaceReady = true
+                // Если есть отложенный автостарт, запускаем его с небольшой задержкой
+                if (pendingAutoStart) {
+                    pendingAutoStart = false
+                    pendingWorkMode?.let { mode ->
+                        currentWorkMode = mode
+                        // Добавляем небольшую задержку для полной инициализации
+                        openGlView.postDelayed({
+                            if (!isActive) {
+                                start()
+                            }
+                        }, 500)
+                    }
+                    pendingWorkMode = null
+                }
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                Log.d("MainActivity", "Surface изменен: ${width}x${height}")
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                Log.d("MainActivity", "Surface уничтожен")
+                isSurfaceReady = false
+            }
+        })
+        
         // Инициализируем две отдельные камеры
         streamingCamera = RtmpCamera2(openGlView, this)
         recordingCamera = RtmpCamera2(openGlView, this)
@@ -155,7 +208,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             showSettingsDialog()
         }
 
-
+        // Обработка интентов от Quick Settings Tiles
+        handleQuickTileIntent()
 
         startStopButton.setOnClickListener {
             if (!isActive) {
@@ -164,6 +218,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 stop()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleQuickTileIntent()
     }
 
     private fun showSettingsDialog() {
@@ -596,11 +656,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun start() {
         if (isActive) return
         
+        Log.d("MainActivity", "Начинаем запуск с режимом $currentWorkMode")
+        
         // Проверяем разрешения перед началом
         if (!checkPermissions()) {
+            Log.d("MainActivity", "Разрешения не получены, запрашиваем")
             requestPermissions()
             return
         }
+        
+        Log.d("MainActivity", "Разрешения получены, продолжаем запуск")
         
         isActive = true
         
@@ -617,31 +682,82 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
         
         // Дополнительно запускаем стриминг, если выбран режим RTMP
+        Log.d("MainActivity", "Используем $currentWorkMode")
         when (currentWorkMode) {
             WorkMode.RTMP_STREAMING -> {
+                Log.d("MainActivity", "Запускаем RTMP стриминг")
                 startStream()
             }
             WorkMode.VIDEO_SEGMENTS -> {
+                Log.d("MainActivity", "Запускаем запись видеосегментов")
                 startRecord()
             }
         }
         
         startStopButton.text = "Стоп"
         enterPictureInPictureMode()
+        
+        // Обновляем состояние плиток при запуске (только для API 24+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            when (currentWorkMode) {
+                WorkMode.RTMP_STREAMING -> {
+                    StreamingTileService.setTileState(this, true)
+                    VideoSegmentsTileService.setTileState(this, false)
+                }
+                WorkMode.VIDEO_SEGMENTS -> {
+                    VideoSegmentsTileService.setTileState(this, true)
+                    StreamingTileService.setTileState(this, false)
+                }
+            }
+        }
     }
 
     private fun stop() {
         if (!isActive) return
+        
+        Log.d("MainActivity", "Начинаем остановку")
         isActive = false
-        stopLiveLocation()
-        streamingCamera?.stopStream()
-        streamingCamera?.stopRecord()
-        recordingCamera?.stopRecord()
+        
+        // Останавливаем геолокацию
+        try {
+            stopLiveLocation()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка остановки геолокации: ${e.message}")
+        }
+        
+        // Останавливаем камеры
+        try {
+            streamingCamera?.stopStream()
+            streamingCamera?.stopRecord()
+            recordingCamera?.stopRecord()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка остановки камер: ${e.message}")
+        }
         
         // Останавливаем RTMP прокси сервер
-        RTMPProxyServer.stopProxy()
+        try {
+            RTMPProxyServer.stopProxy()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка остановки RTMP прокси: ${e.message}")
+        }
         
         startStopButton.text = "Старт"
+        
+        // Сбрасываем состояние плиток при остановке (только для API 24+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            try {
+                StreamingTileService.setTileState(this, false)
+                VideoSegmentsTileService.setTileState(this, false)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка сброса состояния плиток: ${e.message}")
+            }
+        }
+        
+        Log.d("MainActivity", "Остановка завершена")
+        
+        // Сбрасываем флаги инициализации камер
+        isStreamingCameraPrepared = false
+        isRecordingCameraPrepared = false
     }
 
     private fun startStream() {
@@ -649,6 +765,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             showRtmpSettingsDialog()
             return
         }
+        
+        // Проверяем готовность Surface перед началом стриминга
+        if (!isSurfaceReady) {
+            Log.e("MainActivity", "Surface не готов для стриминга")
+            return
+        }
+        
         try {
             // ФИНАЛЬНОЕ РЕШЕНИЕ: Запускаем локальный RTMP прокси
             Log.d("MainActivity", "Запуск локального RTMP прокси для обхода SSL...")
@@ -660,11 +783,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             Log.d("MainActivity", "Используем прокси URL: $proxyFullUrl")
             Log.d("MainActivity", "Оригинальный RTMPS URL: $fullRtmpUrl")
             
-            streamingCamera?.prepareAudio(192 * 1024, 44_100, true)
-            streamingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
-            streamingCamera?.getGlInterface()?.setFilter(CropFilterRender().apply {
-                setCropArea(0f, 33.33f, 99.99f, 33.33f)
-            })
+            // Инициализируем камеру только если она еще не готова
+            if (!isStreamingCameraPrepared) {
+                Log.d("MainActivity", "Инициализация стриминговой камеры")
+                streamingCamera?.prepareAudio(192 * 1024, 44_100, true)
+                streamingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
+                streamingCamera?.getGlInterface()?.setFilter(CropFilterRender().apply {
+                    setCropArea(0f, 33.33f, 99.99f, 33.33f)
+                })
+                isStreamingCameraPrepared = true
+            } else {
+                Log.d("MainActivity", "Стриминговая камера уже инициализирована")
+            }
             
             // Используем локальный прокси вместо прямого RTMPS соединения
             Log.d("MainActivity", "Подключаемся через RTMP прокси: $proxyFullUrl")
@@ -679,26 +809,103 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
     private fun startRecord() {
         ioScope.launch {
-            while (MainActivity.isActive) {
+            try {
+                var segmentCount = 0
+                // Инициализируем камеру один раз в начале сессии
+                Log.d("MainActivity", "Глобальная инициализация камеры для записи сегментов")
+                recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
+                recordingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
+                
+                // Стабилизационная задержка после инициализации
+                delay(1000)
+                
+                while (MainActivity.isActive) {
+                    try {
+                        segmentCount++
+                        val ts = SimpleDateFormat("yyyyMMdd_HH-mm-ss", Locale.US).format(System.currentTimeMillis())
+                        val file = File(getExternalFilesDir(null), "taxi_sos_${ts}_segment${segmentCount}.mp4")
+                        
+                        Log.d("MainActivity", "Начинаем запись сегмента $segmentCount: ${file.name}")
+                        
+                        // Проверяем, что камера готова к записи
+                        if (recordingCamera == null) {
+                            Log.e("MainActivity", "Камера записи не инициализирована")
+                            delay(2000)
+                            continue
+                        }
+                        
+                        // Проверяем и при необходимости переподготавливаем энкодер
+                        if (segmentCount == 1) {
+                            Log.d("MainActivity", "Используем уже подготовленный энкодер для сегмента $segmentCount")
+                        } else {
+                            Log.d("MainActivity", "Переподготавливаем энкодер для сегмента $segmentCount")
+                            // После первого сегмента энкодер требует повторной подготовки
+                            recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
+                            recordingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
+                            // Короткая задержка для инициализации
+                            delay(500)
+                        }
+                        
+                        // Запускаем запись нового сегмента
+                        try {
+                            recordingCamera?.startRecord(file.absolutePath)
+                        } catch (e: Exception) {
+                            if (e.message?.contains("VideoEncoder not prepared yet") == true) {
+                                Log.w("MainActivity", "Энкодер не готов для сегмента $segmentCount, переподготавливаем")
+                                // Принудительно переподготавливаем энкодер
+                                recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
+                                recordingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
+                                delay(500)
+                                recordingCamera?.startRecord(file.absolutePath)
+                            } else {
+                                throw e // Перебрасываем другие ошибки
+                            }
+                        }
+                        
+                        // Записываем 10 секунд
+                        delay(10_000)
+                        
+                        // Останавливаем только запись (камера остается активной)
+                        recordingCamera?.stopRecord()
+                        
+                        Log.d("MainActivity", "Завершена запись сегмента $segmentCount")
+                        
+                        // Увеличенная задержка для полного завершения записи и освобождения энкодера
+                        delay(1500)
+                        
+                        // Проверяем, что файл создался и имеет корректный размер
+                        if (file.exists() && file.length() > 1000) {
+                            // Сканируем файл и отправляем
+                            MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), null, null)
+                            sendVideo(file)
+                            Log.d("MainActivity", "Сегмент $segmentCount отправлен")
+                        } else {
+                            Log.w("MainActivity", "Файл сегмента $segmentCount не создался или слишком мал: ${file.length()} байт")
+                            // Удаляем некорректный файл
+                            if (file.exists()) {
+                                file.delete()
+                            }
+                        }
+                        
+                        // Достаточная задержка между сегментами для восстановления энкодера
+                        delay(1000)
+                        
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Ошибка записи сегмента $segmentCount: ${e.message}")
+                        // Ждем перед следующей попыткой
+                        delay(2000)
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Критическая ошибка при инициализации записи: ${e.message}")
+            } finally {
+                // Полностью останавливаем камеру только при завершении
                 try {
-                    val ts = SimpleDateFormat("yyyyMMdd_HH-mm-ss", Locale.US).format(System.currentTimeMillis())
-                    val file = File(getExternalFilesDir(null), "taxi_sos_${ts}.mp4")
-                    
-                    // Используем отдельную камеру для записи
-                    recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
-                    recordingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
-                    
-                    recordingCamera?.startRecord(file.absolutePath)
-                    delay(10_000)
+                    Log.d("MainActivity", "Окончательная остановка камеры записи")
                     recordingCamera?.stopRecord()
-                    
-                    // Ждем немного чтобы файл был полностью записан
-                    delay(1000)
-                    
-                    MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath),null,null)
-                    sendVideo(file)
                 } catch (e: Exception) {
-                    Log.e("MainActivity", "stopRecord() failed: ${e.message}")
+                    Log.e("MainActivity", "Ошибка остановки камеры записи: ${e.message}")
                 }
             }
         }
@@ -779,14 +986,47 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     override fun onDestroy() {
+        Log.d("MainActivity", "onDestroy вызван")
         super.onDestroy()
-        ioScope.cancel()
-        stop()
+        
+        // Отменяем все корутины
+        try {
+            ioScope.cancel()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка отмены корутин: ${e.message}")
+        }
+        
+        // Останавливаем все процессы
+        try {
+            stop()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка остановки: ${e.message}")
+        }
         
         // Освобождаем ресурсы TDLib
         if (::telegramAuthHelper.isInitialized) {
-            telegramAuthHelper.destroy()
+            try {
+                Log.d("MainActivity", "Освобождаем ресурсы TelegramAuthHelper в onDestroy")
+                telegramAuthHelper.destroy()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка освобождения TelegramAuthHelper в onDestroy: ${e.message}")
+            }
         }
+        
+        // Принудительно освобождаем камеры
+        try {
+            streamingCamera?.stopStream()
+            streamingCamera?.stopRecord()
+            recordingCamera?.stopRecord()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка освобождения камер: ${e.message}")
+        }
+        
+        Log.d("MainActivity", "onDestroy завершен")
+        
+        // Сбрасываем флаги инициализации
+        isStreamingCameraPrepared = false
+        isRecordingCameraPrepared = false
     }
 
     private suspend fun getFreshLocation(): android.location.Location? {
@@ -798,8 +1038,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val requiredPermissions = arrayOf(
             android.Manifest.permission.CAMERA,
             android.Manifest.permission.RECORD_AUDIO,
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            android.Manifest.permission.ACCESS_FINE_LOCATION
         )
         
         return requiredPermissions.all { permission ->
@@ -811,8 +1050,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val requiredPermissions = arrayOf(
             android.Manifest.permission.CAMERA,
             android.Manifest.permission.RECORD_AUDIO,
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            android.Manifest.permission.ACCESS_FINE_LOCATION
         )
         
         ActivityCompat.requestPermissions(this, requiredPermissions, PERMISSION_REQUEST_CODE)
@@ -1599,7 +1837,86 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
     }
 
+    private fun handleQuickTileIntent() {
+        // Quick Settings Tiles доступны только с API 24+
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.N) {
+            return
+        }
+        
+        val intent = intent
+        
+        // Проверяем, есть ли параметры от Quick Settings Tiles
+        val quickTileMode = intent.getStringExtra("quick_tile_mode")
+        val autoStart = intent.getBooleanExtra("auto_start", false)
+        val quickTileAction = intent.getStringExtra("quick_tile_action")
+        
+        when {
+            quickTileAction == "stop_and_close" -> {
+                Log.d("MainActivity", "Получен сигнал закрытия через плитку")
+                isClosingFromTile = true
+                
+                // Останавливаем приложение
+                if (isActive) {
+                    Log.d("MainActivity", "Останавливаем активность")
+                    stop()
+                }
+                
+                // Принудительно освобождаем ресурсы TelegramAuthHelper
+                if (::telegramAuthHelper.isInitialized) {
+                    Log.d("MainActivity", "Освобождаем ресурсы TelegramAuthHelper")
+                    try {
+                        telegramAuthHelper.destroy()
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Ошибка при освобождении TelegramAuthHelper: ${e.message}")
+                    }
+                }
+                
+                // Отменяем все корутины
+                Log.d("MainActivity", "Отменяем корутины")
+                ioScope.cancel()
+                
+                // Сбрасываем состояние плиток
+                StreamingTileService.setTileState(this, false)
+                VideoSegmentsTileService.setTileState(this, false)
+                
+                // Закрываем с задержкой для полного освобождения ресурсов
+                Log.d("MainActivity", "Закрываем приложение через 1 секунду")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    finishAndRemoveTask()
+                    android.os.Process.killProcess(android.os.Process.myPid())
+                }, 1000)
+            }
+            quickTileMode != null && autoStart -> {
+                // Проверяем, не запущено ли уже приложение
+                if (isActive) {
+                    Log.d("MainActivity", "Приложение уже активно, переключаем режим")
+                    // Останавливаем текущий режим
+                    stop()
+                }
+                
+                // Устанавливаем режим работы
+                val mode = when (quickTileMode) {
+                    "RTMP_STREAMING" -> WorkMode.RTMP_STREAMING
+                    "VIDEO_SEGMENTS" -> WorkMode.VIDEO_SEGMENTS
+                    else -> WorkMode.RTMP_STREAMING
+                }
+                
+                // Проверяем готовность Surface
+                if (isSurfaceReady) {
+                    // Surface готов, запускаем сразу
+                    currentWorkMode = mode
+                    if (!isActive) {
+                        start()
+                    }
+                } else {
+                    // Surface не готов, откладываем запуск
+                    Log.d("MainActivity", "Surface не готов, откладываем автостарт")
+                    pendingAutoStart = true
+                    pendingWorkMode = mode
+                }
+            }
+        }
+    }
 
-    
 
 }
