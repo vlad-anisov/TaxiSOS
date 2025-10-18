@@ -12,15 +12,11 @@ object LanguageManager {
         val locale = Locale(languageCode)
         Locale.setDefault(locale)
         
-        val config = Configuration()
+        val res = context.resources
+        val config = Configuration(res.configuration)
         config.setLocale(locale)
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            context.createConfigurationContext(config)
-        } else {
-            @Suppress("DEPRECATION")
-            context.resources.updateConfiguration(config, context.resources.displayMetrics)
-        }
+        @Suppress("DEPRECATION")
+        res.updateConfiguration(config, res.displayMetrics)
         
         // Сохраняем выбранный язык
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)

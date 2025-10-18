@@ -55,7 +55,7 @@ object TelegramAuthDialogs {
         
         // Заголовок
         val titleText = TextView(context)
-        titleText.text = "Авторизация в Telegram"
+        titleText.text = context.getString(R.string.telegram_auth_title)
         titleText.textSize = 18f
         titleText.gravity = Gravity.CENTER
         titleText.setPadding(0, 0, 0, 20)
@@ -63,14 +63,14 @@ object TelegramAuthDialogs {
         
         // Описание
         val descText = TextView(context)
-        descText.text = "Введите ваш номер телефона, зарегистрированный в Telegram"
+        descText.text = context.getString(R.string.enter_phone_description)
         descText.textSize = 14f
         descText.setPadding(0, 0, 0, 20)
         dialogLayout.addView(descText)
         
         // Поле ввода номера телефона
         val phoneInput = EditText(context)
-        phoneInput.hint = "+48 (XXX) XXX-XXX"
+        phoneInput.hint = context.getString(R.string.phone_hint)
         phoneInput.inputType = InputType.TYPE_CLASS_PHONE
         phoneInput.setText("+48")
         phoneInput.setSelection(phoneInput.text.length)
@@ -78,7 +78,7 @@ object TelegramAuthDialogs {
         
         val dialog = AlertDialog.Builder(context)
             .setView(dialogLayout)
-            .setPositiveButton("Отправить код") { _, _ ->
+            .setPositiveButton(context.getString(R.string.send_code)) { _, _ ->
                 val phoneNumber = phoneInput.text.toString().trim()
                 if (phoneNumber.length >= 10) {
                     // Отправляем номер телефона
@@ -87,11 +87,11 @@ object TelegramAuthDialogs {
                     // Показываем диалог ввода кода
                     showVerificationCodeDialog(context, authHelper, phoneNumber, onAuthSuccess, onAuthError)
                 } else {
-                    onAuthError("Введите корректный номер телефона")
+                    onAuthError(context.getString(R.string.invalid_phone))
                 }
             }
-            .setNegativeButton("Отмена") { _, _ ->
-                onAuthError("Авторизация отменена")
+            .setNegativeButton(context.getString(R.string.cancel)) { _, _ ->
+                onAuthError(context.getString(R.string.auth_cancelled))
             }
             .setCancelable(false)
             .create()
@@ -113,7 +113,7 @@ object TelegramAuthDialogs {
         
         // Заголовок
         val titleText = TextView(context)
-        titleText.text = "Код подтверждения"
+        titleText.text = context.getString(R.string.enter_code_title)
         titleText.textSize = 18f
         titleText.gravity = Gravity.CENTER
         titleText.setPadding(0, 0, 0, 20)
@@ -121,20 +121,20 @@ object TelegramAuthDialogs {
         
         // Описание
         val descText = TextView(context)
-        descText.text = "Введите код, отправленный в Telegram на номер $phoneNumber"
+        descText.text = context.getString(R.string.enter_code_description)
         descText.textSize = 14f
         descText.setPadding(0, 0, 0, 20)
         dialogLayout.addView(descText)
         
         // Поле ввода кода
         val codeInput = EditText(context)
-        codeInput.hint = "12345"
+        codeInput.hint = context.getString(R.string.code_hint)
         codeInput.inputType = InputType.TYPE_CLASS_NUMBER
         dialogLayout.addView(codeInput)
         
         val dialog = AlertDialog.Builder(context)
             .setView(dialogLayout)
-            .setPositiveButton("Подтвердить") { _, _ ->
+            .setPositiveButton(context.getString(R.string.confirm)) { _, _ ->
                 val code = codeInput.text.toString().trim()
                 if (code.length >= 4) {
                     // Отправляем код подтверждения
@@ -173,10 +173,10 @@ object TelegramAuthDialogs {
                         }
                     })
                 } else {
-                    onAuthError("Введите корректный код")
+                    onAuthError(context.getString(R.string.invalid_code))
                 }
             }
-            .setNegativeButton("Назад") { _, _ ->
+            .setNegativeButton(context.getString(R.string.back)) { _, _ ->
                 // Возвращаемся к вводу номера телефона
                 showPhoneNumberDialog(context, authHelper, onAuthSuccess, onAuthError)
             }
@@ -199,7 +199,7 @@ object TelegramAuthDialogs {
         
         // Заголовок
         val titleText = TextView(context)
-        titleText.text = "Двухфакторная аутентификация"
+        titleText.text = context.getString(R.string.two_factor_title)
         titleText.textSize = 18f
         titleText.gravity = Gravity.CENTER
         titleText.setPadding(0, 0, 0, 20)
@@ -207,30 +207,30 @@ object TelegramAuthDialogs {
         
         // Описание
         val descText = TextView(context)
-        descText.text = "Введите пароль двухфакторной аутентификации"
+        descText.text = context.getString(R.string.two_factor_description)
         descText.textSize = 14f
         descText.setPadding(0, 0, 0, 20)
         dialogLayout.addView(descText)
         
         // Поле ввода пароля
         val passwordInput = EditText(context)
-        passwordInput.hint = "Пароль"
+        passwordInput.hint = context.getString(R.string.password_hint)
         passwordInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         dialogLayout.addView(passwordInput)
         
         val dialog = AlertDialog.Builder(context)
             .setView(dialogLayout)
-            .setPositiveButton("Войти") { _, _ ->
+            .setPositiveButton(context.getString(R.string.sign_in)) { _, _ ->
                 val password = passwordInput.text.toString()
                 if (password.isNotEmpty()) {
                     // Отправляем пароль
                     authHelper.checkAuthenticationPassword(password)
                 } else {
-                    onAuthError("Введите пароль")
+                    onAuthError(context.getString(R.string.enter_password))
                 }
             }
-            .setNegativeButton("Отмена") { _, _ ->
-                onAuthError("Авторизация отменена")
+            .setNegativeButton(context.getString(R.string.cancel)) { _, _ ->
+                onAuthError(context.getString(R.string.auth_cancelled))
             }
             .setCancelable(false)
             .create()
@@ -243,12 +243,12 @@ object TelegramAuthDialogs {
      */
     fun showLogoutConfirmDialog(context: Context, onConfirm: () -> Unit) {
         AlertDialog.Builder(context)
-            .setTitle("Выход из аккаунта")
-            .setMessage("Вы уверены, что хотите выйти из аккаунта Telegram?")
-            .setPositiveButton("Выйти") { _, _ ->
+            .setTitle(context.getString(R.string.logout_title))
+            .setMessage(context.getString(R.string.logout_message))
+            .setPositiveButton(context.getString(R.string.logout)) { _, _ ->
                 onConfirm()
             }
-            .setNegativeButton("Отмена") { _, _ -> }
+            .setNegativeButton(context.getString(R.string.cancel)) { _, _ -> }
             .create()
             .show()
     }
@@ -263,7 +263,7 @@ object TelegramAuthDialogs {
         
         // Заголовок
         val titleText = TextView(context)
-        titleText.text = "Информация о пользователе"
+        titleText.text = context.getString(R.string.user_info_title)
         titleText.textSize = 18f
         titleText.gravity = Gravity.CENTER
         titleText.setPadding(0, 0, 0, 20)
@@ -281,7 +281,7 @@ object TelegramAuthDialogs {
         // Имя
         if (firstName.isNotEmpty()) {
             val firstNameText = TextView(context)
-            firstNameText.text = "Имя: $firstName"
+            firstNameText.text = context.getString(R.string.first_name) + ": " + firstName
             firstNameText.textSize = 14f
             firstNameText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(firstNameText)
@@ -290,7 +290,7 @@ object TelegramAuthDialogs {
         // Фамилия
         if (lastName.isNotEmpty()) {
             val lastNameText = TextView(context)
-            lastNameText.text = "Фамилия: $lastName"
+            lastNameText.text = context.getString(R.string.last_name) + ": " + lastName
             lastNameText.textSize = 14f
             lastNameText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(lastNameText)
@@ -299,7 +299,7 @@ object TelegramAuthDialogs {
         // Регистрационный номер
         if (registrationNumber.isNotEmpty()) {
             val regText = TextView(context)
-            regText.text = "Регистрационный номер: $registrationNumber"
+            regText.text = context.getString(R.string.registration_number) + ": " + registrationNumber
             regText.textSize = 14f
             regText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(regText)
@@ -308,7 +308,7 @@ object TelegramAuthDialogs {
         // Бортовой номер такси
         if (taxiNumber.isNotEmpty()) {
             val taxiText = TextView(context)
-            taxiText.text = "Бортовой номер такси: $taxiNumber"
+            taxiText.text = context.getString(R.string.taxi_board_number) + ": " + taxiNumber
             taxiText.textSize = 14f
             taxiText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(taxiText)
@@ -317,7 +317,7 @@ object TelegramAuthDialogs {
         // Марка автомобиля
         if (carBrand.isNotEmpty()) {
             val brandText = TextView(context)
-            brandText.text = "Марка автомобиля: $carBrand"
+            brandText.text = context.getString(R.string.car_brand) + ": " + carBrand
             brandText.textSize = 14f
             brandText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(brandText)
@@ -326,7 +326,7 @@ object TelegramAuthDialogs {
         // Цвет автомобиля
         if (carColor.isNotEmpty()) {
             val colorText = TextView(context)
-            colorText.text = "Цвет автомобиля: $carColor"
+            colorText.text = context.getString(R.string.car_color) + ": " + carColor
             colorText.textSize = 14f
             colorText.setPadding(0, 5, 0, 5)
             dialogLayout.addView(colorText)
@@ -337,7 +337,7 @@ object TelegramAuthDialogs {
             val phoneText = TextView(context)
             // Добавляем знак "+" если его нет
             val formattedPhone = if (phone.startsWith("+")) phone else "+$phone"
-            phoneText.text = "Телефон: $formattedPhone (из Telegram)"
+            phoneText.text = context.getString(R.string.phone_from_telegram) + ": " + formattedPhone
             phoneText.textSize = 14f
             phoneText.setPadding(0, 5, 0, 5)
             phoneText.setTextColor(android.graphics.Color.GRAY) // Серый цвет для неизменяемого поля
@@ -346,7 +346,7 @@ object TelegramAuthDialogs {
         
         AlertDialog.Builder(context)
             .setView(dialogLayout)
-            .setPositiveButton("OK") { _, _ -> }
+            .setPositiveButton(context.getString(R.string.ok)) { _, _ -> }
             .create()
             .show()
     }
@@ -356,12 +356,12 @@ object TelegramAuthDialogs {
      */
     fun showAuthErrorDialog(context: Context, error: String, onRetry: () -> Unit) {
         AlertDialog.Builder(context)
-            .setTitle("Ошибка авторизации")
+            .setTitle(context.getString(R.string.auth_error))
             .setMessage(error)
-            .setPositiveButton("Повторить") { _, _ ->
+            .setPositiveButton(context.getString(R.string.retry)) { _, _ ->
                 onRetry()
             }
-            .setNegativeButton("Отмена") { _, _ -> }
+            .setNegativeButton(context.getString(R.string.cancel)) { _, _ -> }
             .create()
             .show()
     }
@@ -370,21 +370,12 @@ object TelegramAuthDialogs {
      * Показывает информационный диалог о настройке бота
      */
     fun showBotSetupInfoDialog(context: Context) {
-        val message = """
-            Для работы авторизации через Telegram необходимо:
-            
-            1. Создать бота через @BotFather
-            2. Получить токен бота
-            3. Настроить домен в настройках бота командой /setdomain
-            4. Указать корректные данные в приложении
-            
-            Подробная инструкция доступна в документации Telegram Bot API.
-        """.trimIndent()
+        val message = context.getString(R.string.bot_setup_message)
         
         AlertDialog.Builder(context)
-            .setTitle("Настройка Telegram бота")
+            .setTitle(context.getString(R.string.bot_setup_title))
             .setMessage(message)
-            .setPositiveButton("Понятно", null)
+            .setPositiveButton(context.getString(R.string.understood), null)
             .show()
     }
     
@@ -398,28 +389,28 @@ object TelegramAuthDialogs {
         
         // Заголовок
         val titleTextView = TextView(context)
-        titleTextView.text = "Настройка домена"
+        titleTextView.text = context.getString(R.string.domain_setup_title)
         titleTextView.textSize = 18f
         titleTextView.setPadding(0, 0, 0, 20)
         dialogLayout.addView(titleTextView)
         
         // Информация
         val infoTextView = TextView(context)
-        infoTextView.text = "Введите домен для OAuth callback (например: https://yourapp.com)"
+        infoTextView.text = context.getString(R.string.domain_setup_info)
         infoTextView.textSize = 14f
         infoTextView.setPadding(0, 0, 0, 20)
         dialogLayout.addView(infoTextView)
         
         // Поле для ввода домена
         val domainInput = EditText(context)
-        domainInput.hint = "https://yourapp.com"
-        domainInput.setText("https://sostaxi.app") // Значение по умолчанию
+        domainInput.hint = context.getString(R.string.domain_hint)
+        domainInput.setText("https://sostaxi.app")
         domainInput.setPadding(20, 20, 20, 20)
         dialogLayout.addView(domainInput)
         
         // Примечание
         val noteTextView = TextView(context)
-        noteTextView.text = "Примечание: Этот домен должен быть настроен в @BotFather командой /setdomain"
+        noteTextView.text = context.getString(R.string.domain_note)
         noteTextView.textSize = 12f
         noteTextView.setPadding(0, 20, 0, 0)
         noteTextView.setTextColor(0xFF666666.toInt())
@@ -427,13 +418,13 @@ object TelegramAuthDialogs {
         
         AlertDialog.Builder(context)
             .setView(dialogLayout)
-            .setPositiveButton("Сохранить") { _, _ ->
+            .setPositiveButton(context.getString(R.string.save)) { _, _ ->
                 val domain = domainInput.text.toString().trim()
                 if (domain.isNotEmpty()) {
                     onDomainSet(domain)
                 }
             }
-            .setNegativeButton("Отмена", null)
+            .setNegativeButton(context.getString(R.string.cancel), null)
             .show()
     }
 } 

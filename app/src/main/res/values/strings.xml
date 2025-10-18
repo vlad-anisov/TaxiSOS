@@ -59,6 +59,26 @@
     <string name="enter_code_description">Код отправлен на ваш номер телефона</string>
     <string name="code_hint">Код подтверждения</string>
     <string name="confirm">Подтвердить</string>
+    <string name="back">Назад</string>
+    <string name="sign_in">Войти</string>
+    <string name="password_hint">Пароль</string>
+    <string name="enter_password">Введите пароль</string>
+    <string name="two_factor_title">Двухфакторная аутентификация</string>
+    <string name="two_factor_description">Введите пароль двухфакторной аутентификации</string>
+    <string name="auth_cancelled">Авторизация отменена</string>
+    <string name="logout_title">Выход из аккаунта</string>
+    <string name="logout_message">Вы уверены, что хотите выйти из аккаунта Telegram?</string>
+    <string name="logout">Выйти</string>
+    <string name="retry">Повторить</string>
+    <string name="ok">ОК</string>
+    <string name="user_info_title">Информация о пользователе</string>
+    <string name="bot_setup_title">Настройка Telegram бота</string>
+    <string name="bot_setup_message">Для работы авторизации через Telegram необходимо:\n\n1. Создать бота через @BotFather\n2. Получить токен бота\n3. Настроить домен в настройках бота командой /setdomain\n4. Указать корректные данные в приложении\n\nПодробная инструкция доступна в документации Telegram Bot API.</string>
+    <string name="understood">Понятно</string>
+    <string name="domain_setup_title">Настройка домена</string>
+    <string name="domain_setup_info">Введите домен для OAuth callback (например: https://yourapp.com)</string>
+    <string name="domain_hint">https://yourapp.com</string>
+    <string name="domain_note">Примечание: Этот домен должен быть настроен в @BotFather командой /setdomain</string>
     
     <!-- Сообщения -->
     <string name="auth_success">Авторизация успешна</string>
@@ -66,4 +86,51 @@
     <string name="invalid_phone">Неверный номер телефона</string>
     <string name="invalid_code">Неверный код подтверждения</string>
     <string name="restart_required">Для применения языка требуется перезапуск приложения</string>
+
+    <!-- Сообщения для Telegram и метки -->
+    <string name="sos_start_header">🚨 НАЧАЛО ЭКСТРЕННОЙ ТРАНСЛЯЦИИ 🚨</string>
+    <string name="mode_label">Режим работы</string>
+    <string name="mode_video_desc">Отправка видео сегментов. Видео сегменты будут автоматически отправляться в этот чат.</string>
+    <string name="mode_streaming_desc">Прямая трансляция. Для просмотра трансляции нажмите \"Вступить\" сверху канала.</string>
+    <string name="selected_contacts_sending_info">Выбранным контактам будут отправляться видео сегменты.</string>
+    <string name="date_label">Дата</string>
+    <string name="segment_duration_prefix">Длительность сегмента: %1$s</string>
+
+    <!-- Настройки/прочее -->
+    <string name="channel_not_selected">Канал не выбран</string>
+    <string name="unknown_channel">Неизвестный канал</string>
+    <string name="change">Изменить</string>
+    <string name="authorized_as_format">Авторизован как: %1$s</string>
+    <string name="selected_contacts_count_format">Выбранные контакты: %1$d</string>
+    <string name="and_more_format">И еще %1$d...</string>
+    <string name="login_via_telegram">Войти через Telegram</string>
+    <string name="enter_registration_hint">Введите регистрационный номер</string>
+    <string name="enter_taxi_board_hint">Введите бортовой номер такси</string>
+    <string name="enter_car_brand_hint">Введите марку автомобиля</string>
+    <string name="enter_car_color_hint">Введите цвет автомобиля</string>
+    <string name="choose_channel">Выберите канал</string>
+    <string name="loading_channels">Загрузка списка каналов...</string>
+    <string name="failed_load_channels">Не удалось загрузить список каналов</string>
+    <string name="selected_channel_toast_format">Выбран канал: %1$s</string>
+    <string name="telegram_auth_required">Необходима авторизация в Telegram</string>
+    <string name="loading_contacts">Загружаем контакты...</string>
+    <string name="logout_done">Выход выполнен</string>
+    <string name="telegram_error_format">Ошибка Telegram: %1$s</string>
+    
+    <!-- Длительность видеосегмента -->
+    <string name="video_segment_length">Длительность сегмента</string>
+    <string name="video_segment_length_hint">От 10 секунд до 5 минут</string>
+    <plurals name="minutes_plurals">
+        <item quantity="one">%d минута</item>
+        <item quantity="few">%d минуты</item>
+        <item quantity="many">%d минут</item>
+        <item quantity="other">%d минут</item>
+    </plurals>
+    <plurals name="seconds_plurals">
+        <item quantity="one">%d секунда</item>
+        <item quantity="few">%d секунды</item>
+        <item quantity="many">%d секунд</item>
+        <item quantity="other">%d секунд</item>
+    </plurals>
+    <string name="minutes_seconds_format">%1$s %2$s</string>
 </resources>

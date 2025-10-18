@@ -54,6 +54,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     // Добавляем флаги для отслеживания инициализации камер
     private var isStreamingCameraPrepared = false
     private var isRecordingCameraPrepared = false
+  // Текущий записываемый сегмент
+  private var currentSegmentFile: java.io.File? = null
+  private var isSegmentRecordingActive: Boolean = false
     // Добавляем класс для хранения данных канала
     data class ChannelInfo(val name: String, val url: String, val key: String)
     // Список каналов
@@ -101,9 +104,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // Добавляем константы для запроса разрешений
         private const val PERMISSION_REQUEST_CODE = 1001
         private const val TELEGRAM_AUTH_PERMISSION_REQUEST_CODE = 1002
+
+      // Настройки длительности видеосегментов
+      private const val PREFS_TAXI = "taxi_sos_prefs"
+      private const val KEY_SEGMENT_DURATION_SECONDS = "segment_duration_seconds"
+      private const val KEY_LAST_SENT_FILE_NAME = "last_sent_file_name"
+      private const val MIN_SEGMENT_DURATION_SECONDS = 10
+      private const val MAX_SEGMENT_DURATION_SECONDS = 300
     }
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var liveLocationMessageId: Int? = null
+    private var autoStopJob: Job? = null
 
     // Добавим свойство для телеграм-авторизации в класс MainActivity
     private lateinit var telegramAuthHelper: TelegramAuthHelper
@@ -183,6 +194,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         startStopButton = Button(this)
         startStopButton.text = "Старт"
         startStopButton.isAllCaps = false
+        startStopButton.visibility = View.GONE
         val btnParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT
         )
@@ -211,12 +223,36 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // Обработка интентов от Quick Settings Tiles
         handleQuickTileIntent()
 
+        // Если после смены языка нужно авто-открыть настройки
+        try {
+            val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("open_settings_after_recreate", false)) {
+                prefs.edit().putBoolean("open_settings_after_recreate", false).apply()
+                root.post { showSettingsDialog() }
+            }
+        } catch (_: Exception) {}
+
         startStopButton.setOnClickListener {
             if (!isActive) {
                 start()
             } else {
                 stop()
             }
+        }
+    }
+
+    private fun formatSegmentDuration(totalSeconds: Int): String {
+        val seconds = totalSeconds.coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
+        val minutes = seconds / 60
+        val remainSeconds = seconds % 60
+        return when {
+            minutes == 0 -> resources.getQuantityString(R.plurals.seconds_plurals, remainSeconds, remainSeconds)
+            remainSeconds == 0 -> resources.getQuantityString(R.plurals.minutes_plurals, minutes, minutes)
+            else -> getString(
+                R.string.minutes_seconds_format,
+                resources.getQuantityString(R.plurals.minutes_plurals, minutes, minutes),
+                resources.getQuantityString(R.plurals.seconds_plurals, remainSeconds, remainSeconds)
+            )
         }
     }
 
@@ -236,6 +272,72 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
         // Объявляем переменную dialog заранее
         lateinit var dialog: androidx.appcompat.app.AlertDialog
+
+        // Блок выбора языка — переносим в начало настроек
+        val languageLabel = TextView(this)
+        languageLabel.text = getString(R.string.language_setting)
+        languageLabel.textSize = 16f
+        languageLabel.setPadding(0, 0, 0, 10)
+        dialogLayout.addView(languageLabel)
+
+        val languageSpinner = Spinner(this)
+        val languageAdapter = ArrayAdapter.createFromResource(
+            this,
+            R.array.languages,
+            android.R.layout.simple_spinner_item
+        )
+        languageAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        languageSpinner.adapter = languageAdapter
+        languageSpinner.setSelection(LanguageManager.getLanguageIndex(this))
+        dialogLayout.addView(languageSpinner)
+
+        // Автоприменение языка без нажатия "Готово"
+        var languageListenerInitialized = false
+        languageSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (!languageListenerInitialized) {
+                    languageListenerInitialized = true
+                    return
+                }
+                val selectedLanguageCode = LanguageManager.getLanguageCodeByIndex(position)
+                val currentLanguage = LanguageManager.getSelectedLanguage(this@MainActivity)
+                if (selectedLanguageCode == currentLanguage) return
+
+                // Применяем язык сразу
+                LanguageManager.setLocale(this@MainActivity, selectedLanguageCode)
+
+                // Обновляем заголовки плиток
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                    try {
+                        android.service.quicksettings.TileService.requestListeningState(
+                            this@MainActivity,
+                            android.content.ComponentName(this@MainActivity, StreamingTileService::class.java)
+                        )
+                        android.service.quicksettings.TileService.requestListeningState(
+                            this@MainActivity,
+                            android.content.ComponentName(this@MainActivity, VideoSegmentsTileService::class.java)
+                        )
+                    } catch (_: Exception) {}
+                }
+
+                // Закрываем текущий диалог и перезапускаем активити с авто-открытием настроек
+                try { dialog.dismiss() } catch (_: Exception) {}
+                val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("open_settings_after_recreate", true).apply()
+                recreate()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
+        // Разделитель после выбора языка
+        val languageDividerTop = View(this)
+        languageDividerTop.setBackgroundColor(0x20000000)
+        val languageDividerParamsTop = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 2
+        )
+        languageDividerParamsTop.setMargins(0, 30, 0, 30)
+        dialogLayout.addView(languageDividerTop, languageDividerParamsTop)
 
         // Добавляем заголовок "Режим работы"
         val modeLabel = TextView(this)
@@ -289,11 +391,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         // Определяем текущий канал
         val currentChannelName = if (rtmpUrl.isEmpty() || rtmpStreamKey.isEmpty()) {
-            "Канал не выбран"
+            getString(R.string.channel_not_selected)
         } else {
             // Пытаемся найти имя канала по сохраненным url и key
             val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
-            sharedPrefs.getString("channel_name", "Неизвестный канал")
+            sharedPrefs.getString("channel_name", getString(R.string.unknown_channel))
         }
         
         currentChannelText.text = currentChannelName
@@ -301,7 +403,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         // Значок выбора (только текст "Изменить" без стрелки)
         val selectIcon = TextView(this)
-        selectIcon.text = "Изменить"
+        selectIcon.text = getString(R.string.change)
         selectIcon.textSize = 14f
         
         // Добавляем элементы в контейнер
@@ -354,7 +456,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 lastName?.let { append(" $it") }
                 username?.let { append(" (@$it)") }
             }
-            userInfoText.text = "Авторизован как: $displayName"
+            userInfoText.text = getString(R.string.authorized_as_format, displayName)
             userInfoText.textSize = 14f
             userInfoText.setPadding(0, 0, 0, 10)
             dialogLayout.addView(userInfoText)
@@ -363,7 +465,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             
             // Кнопка "Войти в другой аккаунт Telegram"
             val changeAccountButton = Button(this)
-            changeAccountButton.text = "Войти в другой аккаунт Telegram"
+            changeAccountButton.text = getString(R.string.login_another_account)
             changeAccountButton.isAllCaps = false
             dialogLayout.addView(changeAccountButton)
             
@@ -376,7 +478,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             // Добавляем заголовок "Выбранные контакты"
             if (selectedContacts.isNotEmpty()) {
                 val contactsLabel = TextView(this)
-                contactsLabel.text = "Выбранные контакты: ${selectedContacts.size}"
+                contactsLabel.text = getString(R.string.selected_contacts_count_format, selectedContacts.size)
                 contactsLabel.textSize = 16f
                 contactsLabel.setPadding(0, 10, 0, 10)
                 dialogLayout.addView(contactsLabel)
@@ -402,7 +504,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 // Если выбрано больше 3 контактов, показываем "И еще X"
                 if (selectedContacts.size > 3) {
                     val moreText = TextView(this)
-                    moreText.text = "И еще ${selectedContacts.size - 3}..."
+                    moreText.text = getString(R.string.and_more_format, selectedContacts.size - 3)
                     moreText.textSize = 14f
                     moreText.setPadding(10, 5, 0, 5)
                     contactsContainer.addView(moreText)
@@ -413,7 +515,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             
             // Кнопка выбора контактов
             val selectContactsButton = Button(this)
-            selectContactsButton.text = "Выбор контактов"
+            selectContactsButton.text = getString(R.string.contact_selection)
             selectContactsButton.isAllCaps = false
             dialogLayout.addView(selectContactsButton)
             
@@ -423,7 +525,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         } else {
             // Кнопка "Войти через Telegram"
             val loginButton = Button(this)
-            loginButton.text = "Войти через Telegram"
+            loginButton.text = getString(R.string.login_via_telegram)
             loginButton.isAllCaps = false
             dialogLayout.addView(loginButton)
             
@@ -444,7 +546,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         // Добавляем заголовок "Информация о пользователе"
         val userInfoLabel = TextView(this)
-        userInfoLabel.text = "Информация о пользователе"
+        userInfoLabel.text = getString(R.string.user_info)
         userInfoLabel.textSize = 16f
         userInfoLabel.setPadding(0, 0, 0, 10)
         dialogLayout.addView(userInfoLabel)
@@ -486,50 +588,50 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         // Поле для ввода регистрационного номера
         val registrationLabel = TextView(this)
-        registrationLabel.text = "Регистрационный номер:"
+        registrationLabel.text = getString(R.string.registration_number) + ":"
         registrationLabel.textSize = 14f
         registrationLabel.setPadding(0, 10, 0, 0)
         dialogLayout.addView(registrationLabel)
         
         val registrationInput = EditText(this)
         registrationInput.setText(registrationNumber)
-        registrationInput.hint = "Введите регистрационный номер"
+        registrationInput.hint = getString(R.string.enter_registration_hint)
         dialogLayout.addView(registrationInput)
         
         // Поле для ввода бортового номера такси
         val taxiNumberLabel = TextView(this)
-        taxiNumberLabel.text = "Бортовой номер такси:"
+        taxiNumberLabel.text = getString(R.string.taxi_board_number) + ":"
         taxiNumberLabel.textSize = 14f
         taxiNumberLabel.setPadding(0, 10, 0, 0)
         dialogLayout.addView(taxiNumberLabel)
         
         val taxiNumberInput = EditText(this)
         taxiNumberInput.setText(taxiNumber)
-        taxiNumberInput.hint = "Введите бортовой номер такси"
+        taxiNumberInput.hint = getString(R.string.enter_taxi_board_hint)
         dialogLayout.addView(taxiNumberInput)
         
         // Поле для ввода марки автомобиля
         val carBrandLabel = TextView(this)
-        carBrandLabel.text = "Марка автомобиля:"
+        carBrandLabel.text = getString(R.string.car_brand) + ":"
         carBrandLabel.textSize = 14f
         carBrandLabel.setPadding(0, 10, 0, 0)
         dialogLayout.addView(carBrandLabel)
         
         val carBrandInput = EditText(this)
         carBrandInput.setText(carBrand)
-        carBrandInput.hint = "Введите марку автомобиля"
+        carBrandInput.hint = getString(R.string.enter_car_brand_hint)
         dialogLayout.addView(carBrandInput)
         
         // Поле для ввода цвета автомобиля
         val carColorLabel = TextView(this)
-        carColorLabel.text = "Цвет автомобиля:"
+        carColorLabel.text = getString(R.string.car_color) + ":"
         carColorLabel.textSize = 14f
         carColorLabel.setPadding(0, 10, 0, 0)
         dialogLayout.addView(carColorLabel)
         
         val carColorInput = EditText(this)
         carColorInput.setText(carColor)
-        carColorInput.hint = "Введите цвет автомобиля"
+        carColorInput.hint = getString(R.string.enter_car_color_hint)
         dialogLayout.addView(carColorInput)
         
         // Неизменяемое поле телефона из Telegram
@@ -550,35 +652,48 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             phoneDisplay.setTextColor(android.graphics.Color.GRAY) // Серый цвет текста
             dialogLayout.addView(phoneDisplay)
         }
-        
-        // Добавляем разделитель перед выбором языка
-        val languageDivider = View(this)
-        languageDivider.setBackgroundColor(0x20000000)
-        val languageDividerParams = LinearLayout.LayoutParams(
+
+        // Разделитель перед настройкой длительности сегмента
+        val dividerDuration = View(this)
+        dividerDuration.setBackgroundColor(0x20000000)
+        val dividerDurationParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 2
         )
-        languageDividerParams.setMargins(0, 30, 0, 30)
-        dialogLayout.addView(languageDivider, languageDividerParams)
-        
-        // Добавляем выбор языка
-        val languageLabel = TextView(this)
-        languageLabel.text = getString(R.string.language_setting)
-        languageLabel.textSize = 16f
-        languageLabel.setPadding(0, 0, 0, 10)
-        dialogLayout.addView(languageLabel)
-        
-        val languageSpinner = Spinner(this)
-        val languageAdapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.languages,
-            android.R.layout.simple_spinner_item
-        )
-        languageAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        languageSpinner.adapter = languageAdapter
-        
-        // Устанавливаем текущий выбранный язык
-        languageSpinner.setSelection(LanguageManager.getLanguageIndex(this))
-        dialogLayout.addView(languageSpinner)
+        dividerDurationParams.setMargins(0, 30, 0, 30)
+        dialogLayout.addView(dividerDuration, dividerDurationParams)
+
+        // Настройка длительности сегмента (ползунок)
+        val segmentDurationLabel = TextView(this)
+        segmentDurationLabel.text = getString(R.string.video_segment_length)
+        segmentDurationLabel.textSize = 16f
+        segmentDurationLabel.setPadding(0, 0, 0, 10)
+        dialogLayout.addView(segmentDurationLabel)
+
+        // Значение длительности с форматированием (мин/сек)
+        val segmentDurationValue = TextView(this)
+        segmentDurationValue.textSize = 14f
+        segmentDurationValue.setPadding(0, 0, 0, 10)
+        dialogLayout.addView(segmentDurationValue)
+
+        val savedDuration = sharedPrefs.getInt(
+            KEY_SEGMENT_DURATION_SECONDS,
+            MIN_SEGMENT_DURATION_SECONDS
+        ).coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
+        segmentDurationValue.text = formatSegmentDuration(savedDuration)
+
+        val segmentDurationSeekBar = SeekBar(this)
+        segmentDurationSeekBar.max = (MAX_SEGMENT_DURATION_SECONDS - MIN_SEGMENT_DURATION_SECONDS)
+        segmentDurationSeekBar.progress = savedDuration - MIN_SEGMENT_DURATION_SECONDS
+        dialogLayout.addView(segmentDurationSeekBar)
+
+        segmentDurationSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val seconds = progress + MIN_SEGMENT_DURATION_SECONDS
+                segmentDurationValue.text = formatSegmentDuration(seconds)
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
         
         // Создаем и отображаем диалог с кнопкой "Готово" по центру
         dialog = androidx.appcompat.app.AlertDialog.Builder(this)
@@ -599,7 +714,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 userCarColor = carColorInput.text.toString().trim()
                 
                 // Сохраняем в SharedPreferences
-                val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
+                val sharedPrefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
                 sharedPrefs.edit()
                     .putString("first_name", firstNameInput.text.toString().trim())
                     .putString("last_name", lastNameInput.text.toString().trim())
@@ -607,6 +722,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     .putString("taxi_number", taxiNumberInput.text.toString().trim())
                     .putString("car_brand", carBrandInput.text.toString().trim())
                     .putString("car_color", carColorInput.text.toString().trim())
+                    // Сохраняем длительность сегмента (с валидацией)
+                    .putInt(
+                        KEY_SEGMENT_DURATION_SECONDS,
+                        (segmentDurationSeekBar.progress + MIN_SEGMENT_DURATION_SECONDS)
+                            .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
+                    )
                     .apply()
                 
                 // Проверяем, изменился ли язык
@@ -617,10 +738,21 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 if (selectedLanguageCode != currentLanguage) {
                     // Сохраняем новый язык
                     LanguageManager.setLocale(this@MainActivity, selectedLanguageCode)
-                    
-                    // Показываем сообщение о необходимости перезапуска
-                    Toast.makeText(this@MainActivity, getString(R.string.restart_required), Toast.LENGTH_LONG).show()
-                    
+
+                    // Обновляем заголовки плиток (попросим систему переслушать тайлы)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                        try {
+                            android.service.quicksettings.TileService.requestListeningState(
+                                this@MainActivity,
+                                android.content.ComponentName(this@MainActivity, StreamingTileService::class.java)
+                            )
+                            android.service.quicksettings.TileService.requestListeningState(
+                                this@MainActivity,
+                                android.content.ComponentName(this@MainActivity, VideoSegmentsTileService::class.java)
+                            )
+                        } catch (_: Exception) {}
+                    }
+
                     // Перезапускаем активность для применения языка
                     recreate()
                 }
@@ -710,6 +842,22 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 }
             }
         }
+
+        // Планируем авто-остановку через 1 минуту, если пользователь не остановит вручную
+        try {
+            autoStopJob?.cancel()
+        } catch (_: Exception) {}
+        autoStopJob = CoroutineScope(Dispatchers.Main).launch {
+            delay(60_000)
+            if (isActive) {
+                Log.d("MainActivity", "Авто-остановка сессии по таймеру 1 минута (эмулируем повторное нажатие на плитку)")
+                val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    putExtra("quick_tile_action", "stop_and_close")
+                }
+                startActivity(intent)
+            }
+        }
     }
 
     private fun stop() {
@@ -717,6 +865,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         Log.d("MainActivity", "Начинаем остановку")
         isActive = false
+        // Отменяем авто-остановку, если была запланирована
+        try {
+            autoStopJob?.cancel()
+            autoStopJob = null
+        } catch (_: Exception) {}
+
+      // Принудительно завершаем и отправляем последний сегмент (даже неполный)
+      try {
+          finalizeLastSegmentBlocking()
+      } catch (e: Exception) {
+          Log.e("MainActivity", "Ошибка при финализации последнего сегмента: ${e.message}")
+      }
         
         // Останавливаем геолокацию
         try {
@@ -729,7 +889,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         try {
             streamingCamera?.stopStream()
             streamingCamera?.stopRecord()
-            recordingCamera?.stopRecord()
+          recordingCamera?.stopRecord()
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка остановки камер: ${e.message}")
         }
@@ -818,12 +978,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 
                 // Стабилизационная задержка после инициализации
                 delay(1000)
+
+                // Загружаем длительность сегмента из настроек (в секундах)
+                val segmentDurationSec = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                    .getInt(KEY_SEGMENT_DURATION_SECONDS, MIN_SEGMENT_DURATION_SECONDS)
+                    .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
                 
                 while (MainActivity.isActive) {
                     try {
                         segmentCount++
                         val ts = SimpleDateFormat("yyyyMMdd_HH-mm-ss", Locale.US).format(System.currentTimeMillis())
-                        val file = File(getExternalFilesDir(null), "taxi_sos_${ts}_segment${segmentCount}.mp4")
+                      val file = File(getExternalFilesDir(null), "taxi_sos_${ts}_segment${segmentCount}.mp4")
                         
                         Log.d("MainActivity", "Начинаем запись сегмента $segmentCount: ${file.name}")
                         
@@ -848,7 +1013,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         
                         // Запускаем запись нового сегмента
                         try {
-                            recordingCamera?.startRecord(file.absolutePath)
+                          // Сохраняем текущий сегмент
+                          currentSegmentFile = file
+                          isSegmentRecordingActive = true
+                          recordingCamera?.startRecord(file.absolutePath)
                         } catch (e: Exception) {
                             if (e.message?.contains("VideoEncoder not prepared yet") == true) {
                                 Log.w("MainActivity", "Энкодер не готов для сегмента $segmentCount, переподготавливаем")
@@ -856,17 +1024,20 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                                 recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
                                 recordingCamera?.prepareVideo(1280, 720, 30, 2_000 * 1024, 90)
                                 delay(500)
-                                recordingCamera?.startRecord(file.absolutePath)
+                              currentSegmentFile = file
+                              isSegmentRecordingActive = true
+                              recordingCamera?.startRecord(file.absolutePath)
                             } else {
                                 throw e // Перебрасываем другие ошибки
                             }
                         }
                         
-                        // Записываем 10 секунд
-                        delay(10_000)
+                        // Записываем выбранную длительность
+                        delay(segmentDurationSec * 1000L)
                         
                         // Останавливаем только запись (камера остается активной)
-                        recordingCamera?.stopRecord()
+                      recordingCamera?.stopRecord()
+                      isSegmentRecordingActive = false
                         
                         Log.d("MainActivity", "Завершена запись сегмента $segmentCount")
                         
@@ -886,6 +1057,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                                 file.delete()
                             }
                         }
+                      currentSegmentFile = null
                         
                         // Достаточная задержка между сегментами для восстановления энкодера
                         delay(1000)
@@ -910,6 +1082,120 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
         }
     }
+
+  private fun finalizeLastSegmentBlocking() {
+      kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+          try {
+              finalizeAndSendLastSegment()
+          } catch (e: Exception) {
+              Log.e("MainActivity", "finalizeAndSendLastSegment ошибка: ${e.message}")
+          }
+      }
+  }
+
+  private suspend fun finalizeAndSendLastSegment() {
+      var lastFile = currentSegmentFile
+      // Если ничего не записывается, нечего завершать
+      if (lastFile == null && !isSegmentRecordingActive) {
+          // Попробуем найти последний файл по шаблону на случай гонки
+          lastFile = tryFindLatestSegmentFile()
+          Log.d("MainActivity", "Резервный поиск файла сегмента: ${lastFile?.name}")
+      }
+      if (lastFile == null) return
+
+      try {
+          // Останавливаем запись, если еще идет
+          if (isSegmentRecordingActive) {
+              try {
+                  recordingCamera?.stopRecord()
+              } catch (_: Exception) {}
+              isSegmentRecordingActive = false
+          }
+
+          // Дождаться финализации файла: до 3 секунд, проверяя каждые 200 мс
+          var finalizedFile: File? = lastFile
+          val deadline = System.currentTimeMillis() + 3000
+          while (System.currentTimeMillis() < deadline) {
+              val candidate = tryFindLatestSegmentFile() ?: finalizedFile
+              if (candidate != null && candidate.exists() && candidate.length() > 0) {
+                  finalizedFile = candidate
+                  // Небольшая доп. задержка для записи moov/mdat
+                  kotlinx.coroutines.delay(200)
+                  break
+              }
+              kotlinx.coroutines.delay(200)
+          }
+
+          val fileToSend = finalizedFile
+          if (fileToSend != null && fileToSend.exists() && fileToSend.length() > 0) {
+              // Сканируем файл
+              MediaScannerConnection.scanFile(this, arrayOf(fileToSend.absolutePath), null, null)
+
+              // Отправляем синхронно (блокирующе), чтобы гарантировать отправку до закрытия
+              Log.d("MainActivity", "Отправка финального сегмента: ${fileToSend.name}, размер=${fileToSend.length()} байт")
+              sendVideoNow(fileToSend)
+              Log.d("MainActivity", "Финальный сегмент отправлен: ${fileToSend.name}")
+          }
+      } finally {
+          currentSegmentFile = null
+      }
+  }
+
+  private fun tryFindLatestSegmentFile(): File? {
+      return try {
+          val dir = getExternalFilesDir(null) ?: return null
+          val files = dir.listFiles { f ->
+              f.isFile && f.name.startsWith("taxi_sos_") && f.name.contains("_segment") && f.name.endsWith(".mp4")
+          } ?: return null
+          files.maxByOrNull { it.lastModified() }
+      } catch (_: Exception) { null }
+  }
+
+  private suspend fun sendVideoNow(videoFile: File) {
+      // Отправка в канал (режим VIDEO_SEGMENTS)
+      try {
+          if (currentWorkMode == WorkMode.VIDEO_SEGMENTS) {
+              withContext(Dispatchers.IO) {
+                  val videoRequestBody = videoFile.asRequestBody("video/mp4".toMediaTypeOrNull())
+                  val multipartBody = MultipartBody.Builder().setType(MultipartBody.FORM)
+                      .addFormDataPart("chat_id", TELEGRAM_CHAT_ID)
+                      .addFormDataPart("video", videoFile.name, videoRequestBody)
+                      .build()
+                  val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo"
+                  val request = Request.Builder()
+                      .url(url)
+                      .post(multipartBody)
+                      .build()
+                  val client = OkHttpClient.Builder()
+                      .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                      .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                      .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                      .build()
+                  client.newCall(request).execute().close()
+              }
+          }
+      } catch (e: Exception) {
+          Log.e("MainActivity", "Ошибка отправки видео в канал: ${e.message}")
+      }
+
+      // Отправка выбранным контактам (если есть)
+      try {
+          if (selectedContacts.isNotEmpty() && telegramUserId != null) {
+              for (contact in selectedContacts) {
+                  sendVideoToContact(contact, videoFile)
+              }
+              // Небольшая задержка чтобы TDLib обработал файл
+              kotlinx.coroutines.delay(500)
+          }
+      } catch (e: Exception) {
+          Log.e("MainActivity", "Ошибка отправки видео контактам: ${e.message}")
+      }
+
+      // Удаляем файл после отправки
+      try {
+          if (videoFile.exists()) videoFile.delete()
+      } catch (_: Exception) {}
+  }
 
     private fun sendVideo(videoFile: File) {
         ioScope.launch {
@@ -995,6 +1281,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка отмены корутин: ${e.message}")
         }
+        try {
+            autoStopJob?.cancel()
+            autoStopJob = null
+        } catch (_: Exception) {}
         
         // Останавливаем все процессы
         try {
@@ -1084,6 +1374,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
     }
     
+    private fun htmlEscape(text: String): String {
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+    }
+
     private suspend fun sendUserInfoMessage() {
         try {
                 // Получаем данные из настроек
@@ -1095,7 +1392,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 val telegramUsername = sharedPrefs.getString("telegram_username", null)
                 
                 // Формируем информационное сообщение о пользователе
-                var userInfoMessage = "🚨 НАЧАЛО ЭКСТРЕННОЙ ТРАНСЛЯЦИИ 🚨\n\n"
+                var userInfoMessage = getString(R.string.sos_start_header) + "\n\n"
                 
                 // 1. Имя и Фамилия из настроек (на первом месте)
                 val fullName = buildString {
@@ -1124,34 +1421,46 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 val carInfo = mutableListOf<String>()
                 if (userCar.isNotEmpty()) carInfo.add(userCar)
                 if (userCarColor.isNotEmpty()) carInfo.add(userCarColor)
-                if (registrationNumber.isNotEmpty()) carInfo.add(registrationNumber)
                 
                 if (carInfo.isNotEmpty()) {
-                    userInfoMessage += "🚗 ${carInfo.joinToString(", ")}\n"
+                    userInfoMessage += "${carInfo.joinToString(", ")}\n"
                 }
                 
+                // 4.1. Регистрационный номер отдельной строкой с форматированием
+                if (registrationNumber.isNotEmpty()) {
+                    val formattedReg = "<b><u>${htmlEscape(registrationNumber)}</u></b>"
+                    userInfoMessage += "🚗 ${getString(R.string.registration_number)}: $formattedReg\n"
+                }
+
                 // 5. Бортовой номер
                 if (taxiNumber.isNotEmpty()) {
-                    userInfoMessage += "🚕 Бортовой номер: $taxiNumber\n"
+                    val formattedTaxi = "<b><u>${htmlEscape(taxiNumber)}</u></b>"
+                    userInfoMessage += "🚕 ${getString(R.string.taxi_board_number)}: $formattedTaxi\n"
                 }
                 
                 // Добавляем информацию о режиме работы
-                userInfoMessage += "\n📹 Режим работы: "
+                userInfoMessage += "\n📹 ${getString(R.string.mode_label)}: "
                 when (currentWorkMode) {
                     WorkMode.VIDEO_SEGMENTS -> {
-                        userInfoMessage += "Отправка видео сегментов (каждые 10 секунд). Видео сегменты будут автоматически отправляться в этот чат."
+                        userInfoMessage += getString(R.string.mode_video_desc)
+                        // Добавляем длительность сегмента из настроек
+                        val segmentDurationSec = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                            .getInt(KEY_SEGMENT_DURATION_SECONDS, MIN_SEGMENT_DURATION_SECONDS)
+                            .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
+                        val formattedDuration = formatSegmentDuration(segmentDurationSec)
+                        userInfoMessage += "\n" + getString(R.string.segment_duration_prefix, formattedDuration)
                     }
                     WorkMode.RTMP_STREAMING -> {
-                        userInfoMessage += "Прямая трансляция. Для просмотра трансляции зайдите в неё сверху канала."
+                        userInfoMessage += getString(R.string.mode_streaming_desc)
                     }
                 }
                 
                 // Добавляем информацию о том, что контактам всегда отправляются видео
                 if (selectedContacts.isNotEmpty()) {
-                    userInfoMessage += "\n\n📱 Выбранным контактам будут отправляться видео сегменты каждые 10 секунд."
+                    userInfoMessage += "\n\n📱 ${getString(R.string.selected_contacts_sending_info)}"
                 }
                 
-                userInfoMessage += "\n📅 Дата: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
+                userInfoMessage += "\n📅 ${getString(R.string.date_label)}: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
                 
                 // Отправляем информационное сообщение
                 val messageBody = MultipartBody.Builder().setType(MultipartBody.FORM)
@@ -1415,7 +1724,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         .putString("channel_name", selectedChannel.name) // Сохраняем название канала
                         .apply()
                     
-                    Toast.makeText(this, "Выбран канал: ${selectedChannel.name}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, getString(R.string.selected_channel_toast_format, selectedChannel.name), Toast.LENGTH_SHORT).show()
                     
                     // Возвращаемся в основное меню настроек если нужно
                     if (returnToMainMenu) {
@@ -1531,7 +1840,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         if (!telegramAuthHelper.isAuthenticated()) {
             Log.w("MainActivity", "Пользователь не авторизован, запускаем авторизацию")
-            Toast.makeText(this, "Необходима авторизация в Telegram", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.telegram_auth_required), Toast.LENGTH_SHORT).show()
             startTelegramAuth()
             return
         }
@@ -1567,7 +1876,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 .clear()
                 .apply()
             
-            Toast.makeText(this, "Выход выполнен", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.logout_done), Toast.LENGTH_SHORT).show()
             
             // Принудительно обновляем диалог настроек через небольшую задержку
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
@@ -1582,7 +1891,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         if (telegramContacts.isEmpty()) {
             Log.w("MainActivity", "Контакты пусты, пытаемся загрузить заново")
-            Toast.makeText(this, "Загружаем контакты...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.loading_contacts), Toast.LENGTH_SHORT).show()
             loadTelegramContacts()
             return
         }
@@ -1805,7 +2114,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             
             override fun onError(error: String) {
                 runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Ошибка Telegram: $error", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.telegram_error_format, error), Toast.LENGTH_LONG).show()
                 }
             }
         })
@@ -1854,36 +2163,27 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             quickTileAction == "stop_and_close" -> {
                 Log.d("MainActivity", "Получен сигнал закрытия через плитку")
                 isClosingFromTile = true
-                
-                // Останавливаем приложение
+
+                // Останавливаем приложение (блокирующе дождемся отправки последнего сегмента)
                 if (isActive) {
                     Log.d("MainActivity", "Останавливаем активность")
                     stop()
+                    // Не закрываем активити сразу, даем время на отправку
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        try { finishAndRemoveTask() } catch (_: Exception) {}
+                    }, 1200)
                 }
-                
-                // Принудительно освобождаем ресурсы TelegramAuthHelper
-                if (::telegramAuthHelper.isInitialized) {
-                    Log.d("MainActivity", "Освобождаем ресурсы TelegramAuthHelper")
-                    try {
-                        telegramAuthHelper.destroy()
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "Ошибка при освобождении TelegramAuthHelper: ${e.message}")
-                    }
-                }
-                
-                // Отменяем все корутины
-                Log.d("MainActivity", "Отменяем корутины")
-                ioScope.cancel()
-                
-                // Сбрасываем состояние плиток
-                StreamingTileService.setTileState(this, false)
-                VideoSegmentsTileService.setTileState(this, false)
-                
-                // Закрываем с задержкой для полного освобождения ресурсов
-                Log.d("MainActivity", "Закрываем приложение через 1 секунду")
+                // Сбрасываем состояние плиток позже, вместе с закрытием
                 android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    finishAndRemoveTask()
-                    android.os.Process.killProcess(android.os.Process.myPid())
+                    try {
+                        StreamingTileService.setTileState(this, false)
+                        VideoSegmentsTileService.setTileState(this, false)
+                    } catch (_: Exception) {}
+                    // Освобождаем ресурсы Telegram
+                    if (::telegramAuthHelper.isInitialized) {
+                        try { telegramAuthHelper.destroy() } catch (_: Exception) {}
+                    }
+                    try { ioScope.cancel() } catch (_: Exception) {}
                 }, 1000)
             }
             quickTileMode != null && autoStart -> {

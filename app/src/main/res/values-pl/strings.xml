@@ -1,30 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SOSTaxi</string>
-    
     <string-array name="work_modes">
         <item>Segmenty wideo</item>
-        <item>Transmisja wideo</item>
+        <item>Transmisja na żywo</item>
     </string-array>
-    
+
     <string-array name="languages">
         <item>Русский</item>
         <item>English</item>
         <item>Polski</item>
     </string-array>
-    
-    <string-array name="language_codes">
-        <item>ru</item>
-        <item>en</item>
-        <item>pl</item>
-    </string-array>
-    
-    <!-- Główne ciągi interfejsu -->
+
     <string name="settings">Ustawienia</string>
     <string name="work_mode">Tryb pracy</string>
     <string name="telegram_channel">Kanał Telegram</string>
     <string name="telegram_auth">Autoryzacja Telegram</string>
     <string name="login_another_account">Zaloguj się na inne konto Telegram</string>
+    <string name="login_via_telegram">Zaloguj się przez Telegram</string>
     <string name="contact_selection">Wybór kontaktów</string>
     <string name="user_info">Informacje o użytkowniku</string>
     <string name="language_setting">Język aplikacji</string>
@@ -34,36 +26,77 @@
     <string name="search_contacts">Szukaj kontaktów...</string>
     <string name="select_contacts">Wybierz kontakty</string>
     <string name="no_contacts_found">Nie znaleziono kontaktów</string>
-    
-    <!-- Kafelki szybkiego uruchomienia -->
+
     <string name="tile_streaming">🎦 Transmisja na żywo</string>
     <string name="tile_video_segments">📹 Segmenty wideo</string>
     <string name="tile_stop_streaming">🔴 Zatrzymaj transmisję</string>
     <string name="tile_stop_recording">🔴 Zatrzymaj nagrywanie</string>
-    
-    <!-- Pola użytkownika -->
+
     <string name="first_name">Imię</string>
     <string name="last_name">Nazwisko</string>
     <string name="registration_number">Numer rejestracyjny</string>
-    <string name="taxi_board_number">Numer pokładowy taksówki</string>
+    <string name="taxi_board_number">Numer boczny taksówki</string>
     <string name="car_brand">Marka samochodu</string>
     <string name="car_color">Kolor samochodu</string>
-    <string name="phone_from_telegram">Telefon (z Telegram)</string>
-    
-    <!-- Autoryzacja Telegram -->
-    <string name="telegram_auth_title">Autoryzacja Telegram</string>
-    <string name="enter_phone_description">Wprowadź swój numer telefonu zarejestrowany w Telegram</string>
+    <string name="phone_from_telegram">Telefon (z Telegrama)</string>
+
+    <string name="telegram_auth_title">Logowanie do Telegrama</string>
+    <string name="enter_phone_description">Wprowadź numer telefonu zarejestrowany w Telegramie</string>
     <string name="phone_hint">+48 (XXX) XXX-XXX</string>
     <string name="send_code">Wyślij kod</string>
-    <string name="enter_code_title">Wprowadź kod potwierdzenia</string>
-    <string name="enter_code_description">Kod wysłany na Twój numer telefonu</string>
-    <string name="code_hint">Kod potwierdzenia</string>
+    <string name="enter_code_title">Wprowadź kod weryfikacyjny</string>
+    <string name="enter_code_description">Kod został wysłany na Twój numer telefonu</string>
+    <string name="code_hint">Kod weryfikacyjny</string>
     <string name="confirm">Potwierdź</string>
-    
-    <!-- Wiadomości -->
-    <string name="auth_success">Autoryzacja pomyślna</string>
+    <string name="back">Wstecz</string>
+    <string name="sign_in">Zaloguj się</string>
+    <string name="password_hint">Hasło</string>
+    <string name="enter_password">Wprowadź hasło</string>
+    <string name="two_factor_title">Uwierzytelnianie dwuskładnikowe</string>
+    <string name="two_factor_description">Wprowadź hasło do uwierzytelniania dwuskładnikowego</string>
+    <string name="auth_cancelled">Autoryzacja anulowana</string>
+    <string name="logout_title">Wylogowanie</string>
+    <string name="logout_message">Czy na pewno chcesz wylogować się z Telegrama?</string>
+    <string name="logout">Wyloguj</string>
+    <string name="retry">Ponów</string>
+    <string name="ok">OK</string>
+    <string name="user_info_title">Informacje o użytkowniku</string>
+    <string name="bot_setup_title">Konfiguracja bota Telegram</string>
+    <string name="bot_setup_message">Aby włączyć autoryzację Telegram:\n\n1. Utwórz bota przez @BotFather\n2. Uzyskaj token bota\n3. Skonfiguruj domenę poleceniem /setdomain w ustawieniach bota\n4. Podaj poprawne dane w aplikacji\n\nSzczegóły w dokumentacji Telegram Bot API.</string>
+    <string name="understood">Rozumiem</string>
+    <string name="domain_setup_title">Konfiguracja domeny</string>
+    <string name="domain_setup_info">Wprowadź domenę dla OAuth callback (np. https://yourapp.com)</string>
+    <string name="domain_hint">https://yourapp.com</string>
+    <string name="domain_note">Uwaga: Ta domena musi być skonfigurowana w @BotFather poleceniem /setdomain</string>
+
+    <string name="auth_success">Autoryzacja zakończona sukcesem</string>
     <string name="auth_error">Błąd autoryzacji</string>
     <string name="invalid_phone">Nieprawidłowy numer telefonu</string>
-    <string name="invalid_code">Nieprawidłowy kod potwierdzenia</string>
-    <string name="restart_required">Wymagane ponowne uruchomienie aplikacji, aby zastosować język</string>
-</resources> 
+    <string name="invalid_code">Nieprawidłowy kod weryfikacyjny</string>
+    <string name="restart_required">Aby zastosować język, aplikacja zostanie ponownie uruchomiona</string>
+
+    <string name="sos_start_header">🚨 ROZPOCZĘTO NAGŁĄ TRANSMISJĘ 🚨</string>
+    <string name="mode_label">Tryb</string>
+    <string name="mode_video_desc">Wysyłanie segmentów wideo. Segmenty będą automatycznie wysyłane do tego czatu.</string>
+    <string name="mode_streaming_desc">Transmisja na żywo. Aby oglądać transmisję, naciśnij \"Dołącz\" na górze kanału.</string>
+    <string name="selected_contacts_sending_info">Wybrane kontakty będą otrzymywać segmenty wideo.</string>
+    <string name="date_label">Data</string>
+    <string name="segment_duration_prefix">Długość segmentu: %1$s</string>
+    
+    <!-- Długość segmentu wideo -->
+    <string name="video_segment_length">Długość segmentu</string>
+    <string name="video_segment_length_hint">Od 10 sekund do 5 minut</string>
+    <plurals name="minutes_plurals">
+        <item quantity="one">%d minuta</item>
+        <item quantity="few">%d minuty</item>
+        <item quantity="many">%d minut</item>
+        <item quantity="other">%d minut</item>
+    </plurals>
+    <plurals name="seconds_plurals">
+        <item quantity="one">%d sekunda</item>
+        <item quantity="few">%d sekundy</item>
+        <item quantity="many">%d sekund</item>
+        <item quantity="other">%d sekund</item>
+    </plurals>
+    <string name="minutes_seconds_format">%1$s %2$s</string>
+</resources>

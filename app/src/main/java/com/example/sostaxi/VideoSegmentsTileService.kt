@@ -31,6 +31,8 @@ class VideoSegmentsTileService : TileService() {
     
     override fun onStartListening() {
         super.onStartListening()
+        // Применим текущую локаль для контекста сервиса перед обновлением тайла
+        LanguageManager.applyLanguage(this)
         updateTile()
     }
     
@@ -187,8 +189,8 @@ class VideoSegmentsTileService : TileService() {
     private fun stopVideoSegmentsRecording() {
         // Останавливаем приложение
         val intent = Intent(this, MainActivity::class.java).apply {
+            // ВАЖНО: не очищаем задачу, чтобы интент пришел в существующий экземпляр
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
-                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
                     Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("quick_tile_action", "stop_and_close")
