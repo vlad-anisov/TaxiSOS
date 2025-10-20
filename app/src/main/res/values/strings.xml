@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SOSTaxi</string>
+    <string name="app_name">Taxi SOS</string>
     
     <string-array name="work_modes">
         <item>Видео сегменты</item>
@@ -44,6 +44,8 @@
     <!-- Поля пользователя -->
     <string name="first_name">Имя</string>
     <string name="last_name">Фамилия</string>
+    <string name="enter_first_name_hint">Введите имя</string>
+    <string name="enter_last_name_hint">Введите фамилию</string>
     <string name="registration_number">Регистрационный номер</string>
     <string name="taxi_board_number">Бортовой номер такси</string>
     <string name="car_brand">Марка автомобиля</string>
@@ -118,7 +120,7 @@
     <string name="telegram_error_format">Ошибка Telegram: %1$s</string>
     
     <!-- Длительность видеосегмента -->
-    <string name="video_segment_length">Длительность сегмента</string>
+    <string name="video_segment_length">Длительность видео сегмента</string>
     <string name="video_segment_length_hint">От 10 секунд до 5 минут</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d минута</item>
@@ -133,4 +135,17 @@
         <item quantity="other">%d секунд</item>
     </plurals>
     <string name="minutes_seconds_format">%1$s %2$s</string>
+    
+    <!-- Настройки Bluetooth-кнопки -->
+    <string name="bluetooth_button_settings">Настройки Bluetooth кнопки</string>
+    <string name="bluetooth_button_enable">Включить обработку Bluetooth-кнопки</string>
+    <string name="bluetooth_button_action">Действие при нажатии Bluetooth кнопки</string>
+    <string name="bluetooth_button_enabled_toast">Bluetooth-кнопка активирована</string>
+    <string name="bluetooth_button_disabled_toast">Bluetooth-кнопка деактивирована</string>
+    <string name="bluetooth_button_info">🎯 Нажмите Bluetooth-кнопку ОДИН РАЗ для запуска выбранного действия. При повторном нажатии - останавливается.\n\n⚠️ ВАЖНО: Требуется включить службу специальных возможностей (кнопка ниже). Она отличает Bluetooth-кнопку от физических кнопок устройства.\n\n✅ Громкость НЕ будет сбрасываться\n✅ Физические кнопки работают как обычно</string>
+    <string name="bluetooth_button_enable_accessibility">✓ Включить службу специальных возможностей</string>
+    <string name="bluetooth_button_accessibility_info">⚠️ Служба специальных возможностей ОБЯЗАТЕЛЬНА для работы функции. Она позволяет отличить нажатие Bluetooth-кнопки от физических кнопок устройства.</string>
+    <string name="accessibility_service_description">Служба для перехвата нажатий Bluetooth-кнопки в приложении Taxi SOS. Позволяет быстро запускать экстренную запись/трансляцию.</string>
+    <string name="accessibility_settings_title">Настройки специальных возможностей</string>
+    <string name="accessibility_enable_instructions">Найдите \"Taxi SOS\" в списке и включите службу</string>
 </resources>

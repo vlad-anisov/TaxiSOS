@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Taxi SOS</string>
+    
     <string-array name="work_modes">
         <item>Segmenty wideo</item>
         <item>Transmisja na żywo</item>
@@ -34,6 +36,8 @@
 
     <string name="first_name">Imię</string>
     <string name="last_name">Nazwisko</string>
+    <string name="enter_first_name_hint">Wprowadź imię</string>
+    <string name="enter_last_name_hint">Wprowadź nazwisko</string>
     <string name="registration_number">Numer rejestracyjny</string>
     <string name="taxi_board_number">Numer boczny taksówki</string>
     <string name="car_brand">Marka samochodu</string>
@@ -84,7 +88,7 @@
     <string name="segment_duration_prefix">Długość segmentu: %1$s</string>
     
     <!-- Długość segmentu wideo -->
-    <string name="video_segment_length">Długość segmentu</string>
+    <string name="video_segment_length">Długość segmentu wideo</string>
     <string name="video_segment_length_hint">Od 10 sekund do 5 minut</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minuta</item>
@@ -99,4 +103,17 @@
         <item quantity="other">%d sekund</item>
     </plurals>
     <string name="minutes_seconds_format">%1$s %2$s</string>
+    
+    <!-- Ustawienia przycisku Bluetooth -->
+    <string name="bluetooth_button_settings">Ustawienia przycisku Bluetooth</string>
+    <string name="bluetooth_button_enable">Włącz obsługę przycisku Bluetooth</string>
+    <string name="bluetooth_button_action">Akcja po naciśnięciu przycisku Bluetooth</string>
+    <string name="bluetooth_button_enabled_toast">Przycisk Bluetooth aktywowany</string>
+    <string name="bluetooth_button_disabled_toast">Przycisk Bluetooth dezaktywowany</string>
+    <string name="bluetooth_button_info">🎯 Naciśnij przycisk Bluetooth RAZ, aby uruchomić wybraną akcję. Naciśnij ponownie, aby zatrzymać.\n\n⚠️ WAŻNE: Musisz włączyć usługę ułatwień dostępu (przycisk poniżej). Pozwala ona odróżnić przycisk Bluetooth od fizycznych przycisków urządzenia.\n\n✅ Głośność NIE będzie resetowana\n✅ Fizyczne przyciski działają normalnie</string>
+    <string name="bluetooth_button_enable_accessibility">✓ Włącz usługę ułatwień dostępu</string>
+    <string name="bluetooth_button_accessibility_info">⚠️ Usługa ułatwień dostępu jest WYMAGANA do działania funkcji. Pozwala ona odróżnić naciśnięcia przycisku Bluetooth od fizycznych przycisków urządzenia.</string>
+    <string name="accessibility_service_description">Usługa do przechwytywania naciśnięć przycisku Bluetooth w aplikacji Taxi SOS. Umożliwia szybkie uruchamianie nagrywania/transmisji awaryjnej.</string>
+    <string name="accessibility_settings_title">Ustawienia ułatwień dostępu</string>
+    <string name="accessibility_enable_instructions">Znajdź \"Taxi SOS\" na liście i włącz usługę</string>
 </resources>

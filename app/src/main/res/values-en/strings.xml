@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SOSTaxi</string>
+    <string name="app_name">Taxi SOS</string>
 
     <string-array name="work_modes">
         <item>Video segments</item>
@@ -44,6 +44,8 @@
     <!-- User fields -->
     <string name="first_name">First name</string>
     <string name="last_name">Last name</string>
+    <string name="enter_first_name_hint">Enter first name</string>
+    <string name="enter_last_name_hint">Enter last name</string>
     <string name="registration_number">Registration number</string>
     <string name="taxi_board_number">Taxi board number</string>
     <string name="car_brand">Car brand</string>
@@ -118,7 +120,7 @@
     <string name="telegram_error_format">Telegram error: %1$s</string>
     
     <!-- Video segment length -->
-    <string name="video_segment_length">Segment length</string>
+    <string name="video_segment_length">Video segment length</string>
     <string name="video_segment_length_hint">From 10 seconds to 5 minutes</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minute</item>
@@ -129,4 +131,18 @@
         <item quantity="other">%d seconds</item>
     </plurals>
     <string name="minutes_seconds_format">%1$s %2$s</string>
+    
+    <!-- Bluetooth button settings -->
+    <string name="bluetooth_button_settings">Bluetooth button settings</string>
+    <string name="bluetooth_button_enable">Enable Bluetooth button processing</string>
+    <string name="bluetooth_button_action">Action on Bluetooth button press</string>
+    <string name="bluetooth_button_enabled_toast">Bluetooth button activated</string>
+    <string name="bluetooth_button_disabled_toast">Bluetooth button deactivated</string>
+    <string name="bluetooth_button_info">🎯 Press the Bluetooth button ONCE to launch the selected action. Press again to stop.\n\n⚠️ IMPORTANT: You must enable the accessibility service (button below). It distinguishes the Bluetooth button from physical device buttons.\n\n✅ Volume will NOT be reset\n✅ Physical buttons work as usual</string>
+    <string name="bluetooth_button_enable_accessibility">✓ Enable accessibility service</string>
+    <string name="bluetooth_button_accessibility_info">⚠️ Accessibility service is REQUIRED for the function to work. It allows distinguishing Bluetooth button presses from physical device buttons.</string>
+    <string name="accessibility_service_description">Service to intercept Bluetooth button presses in Taxi SOS app. Allows quick emergency recording/streaming launch.</string>
+    <string name="accessibility_settings_title">Accessibility settings</string>
+    <string name="accessibility_enable_instructions">Find \"Taxi SOS\" in the list and enable the service</string>
 </resources>
+

@@ -83,6 +83,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private var userCar: String = ""
     private var userCarColor: String = ""
     
+    // Диалог настроек (для возможности его обновления)
+    private var dialog: androidx.appcompat.app.AlertDialog? = null
+    
+    // UI-элементы диалога для обновления их статуса
+    private var accessibilityInfoText: TextView? = null
+    private var enableAccessibilityButton: Button? = null
+    
     enum class WorkMode {
         VIDEO_SEGMENTS,     // Отправка видео сегментами
         RTMP_STREAMING      // Настоящая RTMP-трансляция
@@ -232,6 +239,35 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
         } catch (_: Exception) {}
 
+        // Автозапуск BluetoothButtonService (всегда включено под капотом)
+        try {
+            val sharedPrefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+            if (!sharedPrefs.getBoolean("bluetooth_button_enabled", false)) {
+                // Проставим дефолты один раз
+                sharedPrefs.edit()
+                    .putBoolean("bluetooth_button_enabled", true)
+                    .putBoolean("ble_only_mode", true)
+                    .apply()
+            }
+            val bluetoothButtonEnabled = true
+            if (bluetoothButtonEnabled) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val needScan = checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val needConnect = checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (needScan || needConnect) {
+                        requestPermissions(arrayOf(
+                            android.Manifest.permission.BLUETOOTH_SCAN,
+                            android.Manifest.permission.BLUETOOTH_CONNECT
+                        ), 1002)
+                    }
+                }
+                Log.d(TAG, "Bluetooth-кнопка включена, запускаем сервис")
+                BluetoothButtonService.start(this)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка запуска BluetoothButtonService: ${e.message}")
+        }
+
         startStopButton.setOnClickListener {
             if (!isActive) {
                 start()
@@ -261,8 +297,76 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         setIntent(intent)
         handleQuickTileIntent()
     }
+    
+    override fun onResume() {
+        super.onResume()
+        // Проверяем, был ли открыт диалог настроек перед уходом в системные настройки
+        val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        val shouldUpdateSettings = prefs.getBoolean("settings_dialog_open", false)
+        
+        Log.d("MainActivity", "onResume: shouldUpdateSettings=$shouldUpdateSettings, dialog?.isShowing=${dialog?.isShowing}")
+        
+        if (shouldUpdateSettings) {
+            // Сбрасываем флаг
+            prefs.edit().putBoolean("settings_dialog_open", false).apply()
+            
+            Log.d("MainActivity", "Диалог был закрыт системой, переоткрываем его")
+            
+            // КРИТИЧЕСКИ ВАЖНО: явно закрываем старый диалог (если он вдруг остался)
+            dialog?.dismiss()
+            dialog = null
+            accessibilityInfoText = null
+            enableAccessibilityButton = null
+            
+            // Диалог был закрыт системой при переходе в настройки, переоткрываем его
+            window.decorView.post {
+                showSettingsDialog()
+            }
+        }
+    }
+    
+    /**
+     * Обновляет статус Accessibility Service в уже открытом диалоге настроек
+     */
+    private fun updateAccessibilityStatus() {
+        Log.d("MainActivity", "updateAccessibilityStatus вызван: dialog?.isShowing=${dialog?.isShowing}, accessibilityInfoText=$accessibilityInfoText, enableAccessibilityButton=$enableAccessibilityButton")
+        
+        // Проверяем, что диалог открыт и UI-элементы доступны
+        if (dialog?.isShowing == true && accessibilityInfoText != null && enableAccessibilityButton != null) {
+            val isEnabled = isAccessibilityServiceEnabled()
+            
+            Log.d("MainActivity", "Обновляем UI: isEnabled=$isEnabled")
+            
+            if (isEnabled) {
+                enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
+                accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+                accessibilityInfoText?.setTextColor(0xFF00AA00.toInt()) // Зелёный
+            } else {
+                enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
+                accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+                accessibilityInfoText?.setTextColor(0xFFFF0000.toInt()) // Красный
+            }
+            
+            Log.d("MainActivity", "✅ Статус Accessibility Service обновлён: enabled=$isEnabled")
+        } else {
+            Log.w("MainActivity", "⚠️ Не удалось обновить статус: диалог не открыт или UI-элементы недоступны")
+        }
+    }
 
     private fun showSettingsDialog() {
+        // КРИТИЧЕСКИ ВАЖНО: Закрываем старый диалог перед созданием нового (если он ещё показывается)
+        dialog?.let {
+            if (it.isShowing) {
+                Log.d("MainActivity", "⚠️ Старый диалог всё ещё показывается, закрываем его")
+                it.dismiss()
+            }
+        }
+        
+        // Устанавливаем FLAG_SECURE чтобы система НЕ сохраняла snapshot при переходе в настройки
+        // Это предотвращает появление "замороженного" фона после возврата
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        Log.d("MainActivity", "🔒 FLAG_SECURE установлен (snapshot отключен)")
+        
         // Создаем ScrollView для прокрутки
         val scrollView = ScrollView(this)
         val dialogLayout = LinearLayout(this)
@@ -271,7 +375,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         scrollView.addView(dialogLayout)
 
         // Объявляем переменную dialog заранее
-        lateinit var dialog: androidx.appcompat.app.AlertDialog
+        lateinit var localDialog: androidx.appcompat.app.AlertDialog
 
         // Блок выбора языка — переносим в начало настроек
         val languageLabel = TextView(this)
@@ -321,7 +425,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 }
 
                 // Закрываем текущий диалог и перезапускаем активити с авто-открытием настроек
-                try { dialog.dismiss() } catch (_: Exception) {}
+                try { dialog?.dismiss() } catch (_: Exception) {}
                 val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("open_settings_after_recreate", true).apply()
                 recreate()
@@ -339,6 +443,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         languageDividerParamsTop.setMargins(0, 30, 0, 30)
         dialogLayout.addView(languageDividerTop, languageDividerParamsTop)
 
+        // Режим работы скрыт
+        /*
         // Добавляем заголовок "Режим работы"
         val modeLabel = TextView(this)
         modeLabel.text = getString(R.string.work_mode)
@@ -368,6 +474,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         )
         dividerParams.setMargins(0, 30, 0, 30)
         dialogLayout.addView(divider, dividerParams)
+        */
 
         // Добавляем заголовок "Telegram канал"
         val channelLabel = TextView(this)
@@ -472,7 +579,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             changeAccountButton.setOnClickListener {
                 // Сначала выходим из текущего аккаунта, потом запускаем новую авторизацию
                 logoutFromTelegram()
-                dialog.dismiss() // Закрываем текущий диалог
+                dialog?.dismiss() // Закрываем текущий диалог
             }
             
             // Добавляем заголовок "Выбранные контакты"
@@ -571,7 +678,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         val firstNameInput = EditText(this)
         firstNameInput.setText(firstName)
-        firstNameInput.hint = getString(R.string.first_name)
+        firstNameInput.hint = getString(R.string.enter_first_name_hint)
         dialogLayout.addView(firstNameInput)
         
         // Поле для ввода фамилии
@@ -583,7 +690,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         val lastNameInput = EditText(this)
         lastNameInput.setText(lastName)
-        lastNameInput.hint = getString(R.string.last_name)
+        lastNameInput.hint = getString(R.string.enter_last_name_hint)
         dialogLayout.addView(lastNameInput)
         
         // Поле для ввода регистрационного номера
@@ -695,17 +802,200 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         
+        // Разделитель перед настройками Bluetooth-кнопки
+        val dividerBluetooth = View(this)
+        dividerBluetooth.setBackgroundColor(0x20000000)
+        val dividerBluetoothParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 2
+        )
+        dividerBluetoothParams.setMargins(0, 30, 0, 30)
+        dialogLayout.addView(dividerBluetooth, dividerBluetoothParams)
+        
+        // Настройки Bluetooth-кнопки
+        val bluetoothButtonLabel = TextView(this)
+        bluetoothButtonLabel.text = getString(R.string.bluetooth_button_settings)
+        bluetoothButtonLabel.textSize = 16f
+        bluetoothButtonLabel.setPadding(0, 0, 0, 10)
+        dialogLayout.addView(bluetoothButtonLabel)
+        
+        // Информационное сообщение (скрыто)
+        /*
+        val bluetoothButtonInfo = TextView(this)
+        bluetoothButtonInfo.text = getString(R.string.bluetooth_button_info)
+        bluetoothButtonInfo.textSize = 12f
+        bluetoothButtonInfo.setPadding(0, 0, 0, 15)
+        bluetoothButtonInfo.setTextColor(0xFF666666.toInt())
+        dialogLayout.addView(bluetoothButtonInfo)
+        */
+        
+        // Обработка Bluetooth-кнопки включена всегда (под капотом)
+
+        // Статус и запрос Nearby devices (Android 12+) - скрыто
+        /*
+        val nearbyPermStatus = TextView(this)
+        nearbyPermStatus.textSize = 12f
+        nearbyPermStatus.setPadding(0, 8, 0, 4)
+        dialogLayout.addView(nearbyPermStatus)
+
+        fun updateNearbyPermStatus() {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val hasScan = checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                val hasConnect = checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (hasScan && hasConnect) {
+                    nearbyPermStatus.text = "✓ Доступ к устройствам поблизости предоставлен"
+                    nearbyPermStatus.setTextColor(0xFF00AA00.toInt())
+                } else {
+                    nearbyPermStatus.text = "⚠ Требуется разрешение: Устройства поблизости (Nearby devices)"
+                    nearbyPermStatus.setTextColor(0xFFFF6600.toInt())
+                }
+            } else {
+                nearbyPermStatus.text = ""
+            }
+        }
+        updateNearbyPermStatus()
+        */
+
+        // Кнопка запроса разрешений Bluetooth - скрыто
+        /*
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            // Проверяем, было ли уже запрошено разрешение
+            val bluetoothPermRequested = sharedPrefs.getBoolean("bluetooth_perm_requested", false)
+            val hasScan = checkSelfPermission(android.Manifest.permission.BLUETOOTH_SCAN) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val hasConnect = checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            
+            // Показываем кнопку только если разрешения не предоставлены И не были запрошены ранее
+            if (!hasScan || !hasConnect) {
+                if (!bluetoothPermRequested) {
+                    val requestNearbyButton = Button(this)
+                    requestNearbyButton.text = "Разрешить доступ к устройствам поблизости"
+                    requestNearbyButton.isAllCaps = false
+                    requestNearbyButton.setOnClickListener {
+                        // Сохраняем флаг, что разрешение было запрошено
+                        sharedPrefs.edit().putBoolean("bluetooth_perm_requested", true).apply()
+                        
+                        requestPermissions(arrayOf(
+                            android.Manifest.permission.BLUETOOTH_SCAN,
+                            android.Manifest.permission.BLUETOOTH_CONNECT
+                        ), 1100)
+                    }
+                    dialogLayout.addView(requestNearbyButton)
+                }
+            }
+        }
+        */
+
+        // Кнопка выбора BLE-устройства (опционально)
+        val selectBleButton = Button(this)
+        selectBleButton.text = "Выбрать Bluetooth кнопку"
+        selectBleButton.isAllCaps = false
+        
+        // TextView для отображения выбранного устройства
+        val selectedDeviceText = TextView(this)
+        selectedDeviceText.textSize = 12f
+        selectedDeviceText.setPadding(0, 8, 0, 15)
+        selectedDeviceText.setTextColor(0xFF00AA00.toInt()) // Зелёный цвет
+        
+        // Загружаем сохраненное устройство
+        val savedDeviceName = sharedPrefs.getString("ble_device_name", null)
+        val savedDeviceAddr = sharedPrefs.getString("ble_device_address", null)
+        if (savedDeviceName != null && savedDeviceAddr != null) {
+            selectedDeviceText.text = "✓ Выбрано: $savedDeviceName"
+            selectedDeviceText.visibility = View.VISIBLE
+        } else {
+            selectedDeviceText.visibility = View.GONE
+        }
+        
+        selectBleButton.setOnClickListener {
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val needConnect = checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    if (needConnect) {
+                        requestPermissions(arrayOf(
+                            android.Manifest.permission.BLUETOOTH_CONNECT
+                        ), 1004)
+                        return@setOnClickListener
+                    }
+                }
+                showBleConnectedDevicesDialog { deviceName ->
+                    // Обновляем TextView после выбора устройства
+                    selectedDeviceText.text = "✓ Выбрано: $deviceName"
+                    selectedDeviceText.visibility = View.VISIBLE
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this, "Не удалось открыть список устройств: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        dialogLayout.addView(selectBleButton)
+        dialogLayout.addView(selectedDeviceText)
+        
+        // Spinner для выбора действия
+        val bluetoothActionLabel = TextView(this)
+        bluetoothActionLabel.text = getString(R.string.bluetooth_button_action) + ":"
+        bluetoothActionLabel.textSize = 14f
+        bluetoothActionLabel.setPadding(0, 20, 0, 10)
+        dialogLayout.addView(bluetoothActionLabel)
+        
+        val bluetoothActionSpinner = Spinner(this)
+        val bluetoothActionAdapter = ArrayAdapter.createFromResource(
+            this,
+            R.array.work_modes,
+            android.R.layout.simple_spinner_item
+        )
+        bluetoothActionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        bluetoothActionSpinner.adapter = bluetoothActionAdapter
+        
+        // Загружаем сохраненное действие
+        val savedAction = sharedPrefs.getString("bluetooth_button_action", "VIDEO_SEGMENTS") ?: "VIDEO_SEGMENTS"
+        bluetoothActionSpinner.setSelection(if (savedAction == "VIDEO_SEGMENTS") 0 else 1)
+        
+        // Spinner всегда активен
+        bluetoothActionSpinner.isEnabled = true
+        bluetoothActionLabel.isEnabled = true
+        
+        dialogLayout.addView(bluetoothActionSpinner)
+        
+        // Информация о службе специальных возможностей
+        accessibilityInfoText = TextView(this)
+        accessibilityInfoText?.text = getString(R.string.bluetooth_button_accessibility_info)
+        accessibilityInfoText?.textSize = 12f
+        accessibilityInfoText?.setPadding(0, 20, 0, 15)
+        accessibilityInfoText?.setTextColor(0xFFFF6600.toInt()) // Оранжевый цвет для важной информации
+        dialogLayout.addView(accessibilityInfoText)
+        
+        // Кнопка для открытия настроек Accessibility
+        enableAccessibilityButton = Button(this)
+        enableAccessibilityButton?.text = getString(R.string.bluetooth_button_enable_accessibility)
+        enableAccessibilityButton?.isAllCaps = false
+        enableAccessibilityButton?.setOnClickListener {
+            openAccessibilitySettings()
+        }
+        dialogLayout.addView(enableAccessibilityButton)
+        
+        // Проверяем, включена ли служба специальных возможностей
+        val isAccessibilityEnabled = isAccessibilityServiceEnabled()
+        if (isAccessibilityEnabled) {
+            enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
+            accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+            accessibilityInfoText?.setTextColor(0xFF00AA00.toInt()) // Зелёный цвет
+        } else {
+            enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
+            accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+            accessibilityInfoText?.setTextColor(0xFFFF0000.toInt()) // Красный цвет для важного предупреждения
+        }
+        
         // Создаем и отображаем диалог с кнопкой "Готово" по центру
-        dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+        localDialog = androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.settings))
             .setView(scrollView)
             .setPositiveButton(getString(R.string.done)) { _, _ ->
-                // Сохраняем выбранный режим
+                // Сохраняем выбранный режим (закомментировано, т.к. режим скрыт)
+                /*
                 currentWorkMode = when (modeSpinner.selectedItemPosition) {
                     0 -> WorkMode.VIDEO_SEGMENTS
                     1 -> WorkMode.RTMP_STREAMING
                     else -> WorkMode.RTMP_STREAMING
                 }
+                */
                 
                 // Сохраняем информацию о пользователе
                 userName = firstNameInput.text.toString().trim()
@@ -715,6 +1005,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 
                 // Сохраняем в SharedPreferences
                 val sharedPrefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                
+                // Сохраняем настройки Bluetooth-кнопки
+                val bluetoothButtonWasEnabled = sharedPrefs.getBoolean("bluetooth_button_enabled", true)
+                val bluetoothButtonEnabled = true
+                val bluetoothButtonAction = when (bluetoothActionSpinner.selectedItemPosition) {
+                    0 -> "VIDEO_SEGMENTS"
+                    1 -> "RTMP_STREAMING"
+                    else -> "VIDEO_SEGMENTS"
+                }
+                
                 sharedPrefs.edit()
                     .putString("first_name", firstNameInput.text.toString().trim())
                     .putString("last_name", lastNameInput.text.toString().trim())
@@ -728,7 +1028,22 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         (segmentDurationSeekBar.progress + MIN_SEGMENT_DURATION_SECONDS)
                             .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
                     )
+                    // Сохраняем настройки Bluetooth-кнопки
+                    .putBoolean("bluetooth_button_enabled", true)
+                    .putString("bluetooth_button_action", bluetoothButtonAction)
+                    .putBoolean("ble_only_mode", true)
                     .apply()
+                
+                // Управляем BluetoothButtonService в зависимости от настроек
+                if (bluetoothButtonEnabled && !bluetoothButtonWasEnabled) {
+                    // Включили - запускаем сервис
+                    BluetoothButtonService.start(this@MainActivity)
+                    Toast.makeText(this@MainActivity, getString(R.string.bluetooth_button_enabled_toast), Toast.LENGTH_SHORT).show()
+                } else if (!bluetoothButtonEnabled && bluetoothButtonWasEnabled) {
+                    // Выключили - останавливаем сервис
+                    BluetoothButtonService.stop(this@MainActivity)
+                    Toast.makeText(this@MainActivity, getString(R.string.bluetooth_button_disabled_toast), Toast.LENGTH_SHORT).show()
+                }
                 
                 // Проверяем, изменился ли язык
                 val selectedLanguageIndex = languageSpinner.selectedItemPosition
@@ -755,34 +1070,79 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
                     // Перезапускаем активность для применения языка
                     recreate()
+                } else {
+                    // Если язык не изменился, принудительно обновляем UI для очистки "замороженного" фона
+                    // Это убирает snapshot, который остаётся после возврата из системных настроек
+                    window.decorView.postDelayed({
+                        // Форсируем перерисовку фона
+                        window.decorView.invalidate()
+                        root.invalidate()
+                    }, 50) // Небольшая задержка для плавности
                 }
             }
             .create()
         
         // Центрирование заголовка диалога
-        dialog.setOnShowListener {
-            val titleView = dialog.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)
+        localDialog.setOnShowListener {
+            val titleView = localDialog.findViewById<TextView>(androidx.appcompat.R.id.alertTitle)
             titleView?.gravity = android.view.Gravity.CENTER
             
             // Центрирование кнопок
-            val positiveButton = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
+            val positiveButton = localDialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
             val layoutParams = positiveButton.layoutParams as LinearLayout.LayoutParams
             layoutParams.gravity = android.view.Gravity.CENTER
             layoutParams.width = LinearLayout.LayoutParams.WRAP_CONTENT
             positiveButton.layoutParams = layoutParams
             
+            // Применяем жёлтый цвет ко всем кнопкам
+            applyYellowColorToDialogButtons(localDialog)
+            
             // Перемещение кнопки в центр
             val buttonLayout = positiveButton.parent as LinearLayout
             buttonLayout.gravity = android.view.Gravity.CENTER
+            
+            // Обновляем статус Accessibility Service при показе диалога
+            // Это важно, если пользователь только что вернулся из настроек
+            val isEnabled = isAccessibilityServiceEnabled()
+            if (isEnabled) {
+                enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
+                accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+                accessibilityInfoText?.setTextColor(0xFF00AA00.toInt())
+            } else {
+                enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
+                accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+                accessibilityInfoText?.setTextColor(0xFFFF0000.toInt())
+            }
         }
-
+        
+        // Обработчик закрытия диалога (для очистки "замороженного" фона)
+        localDialog.setOnDismissListener {
+            // Сбрасываем флаг settings_dialog_open
+            val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("settings_dialog_open", false).apply()
+            
+            // Снимаем FLAG_SECURE чтобы разрешить скриншоты снова
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            Log.d("MainActivity", "🔓 FLAG_SECURE снят (snapshot разрешён)")
+            
+            // Принудительно обновляем UI для очистки snapshot
+            window.decorView.postDelayed({
+                window.decorView.invalidate()
+                root.invalidate()
+            }, 50)
+        }
+        
         // Настраиваем действие для элемента выбора канала
         channelInfoContainer.setOnClickListener {
-            dialog.dismiss()
+            localDialog.dismiss()
             showRtmpSettingsDialog(true) // Передаем флаг, указывающий, что нужно вернуться в основное меню
         }
         
-        dialog.show()
+        // Сохраняем созданный диалог в class member для возможности обновления статуса
+        this.dialog = localDialog
+        
+        // Показываем диалог
+        localDialog.show()
     }
 
     private fun start() {
@@ -1363,6 +1723,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     Toast.makeText(this, "Необходимы разрешения для работы приложения", Toast.LENGTH_LONG).show()
                 }
             }
+            1100, 1002, 1003 -> {
+                val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+                if (allGranted) {
+                    try {
+                        BluetoothButtonService.stop(this)
+                        BluetoothButtonService.start(this)
+                        Toast.makeText(this, "Разрешения предоставлены", Toast.LENGTH_SHORT).show()
+                    } catch (_: Exception) {}
+                } else {
+                    Toast.makeText(this, "Разрешения не предоставлены", Toast.LENGTH_SHORT).show()
+                }
+            }
             TELEGRAM_AUTH_PERMISSION_REQUEST_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                     // Все необходимые разрешения получены
@@ -1740,10 +2112,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
             .create()
         
-        // Центрирование заголовка
+        // Центрирование заголовка и применение жёлтого цвета к кнопкам
         dialog.setOnShowListener {
             val titleView = dialog.findViewById<TextView>(android.R.id.title)
             titleView?.gravity = android.view.Gravity.CENTER
+            applyYellowColorToDialogButtons(dialog)
         }
         
         dialog.show()
@@ -2030,10 +2403,11 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
             .create()
         
-        // Центрирование заголовка
+        // Центрирование заголовка и применение жёлтого цвета к кнопкам
         dialog.setOnShowListener {
             val titleView = dialog.findViewById<TextView>(android.R.id.title)
             titleView?.gravity = android.view.Gravity.CENTER
+            applyYellowColorToDialogButtons(dialog)
         }
         
         dialog.show()
@@ -2218,5 +2592,137 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
     }
 
+    /**
+     * Проверка, включена ли служба специальных возможностей
+     */
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val service = "${packageName}/${VolumeButtonAccessibilityService::class.java.canonicalName}"
+        val enabledServices = android.provider.Settings.Secure.getString(
+            contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )
+        return enabledServices?.contains(service) == true
+    }
+
+    /**
+     * Открытие настроек специальных возможностей
+     */
+    private fun openAccessibilitySettings() {
+        try {
+            // Сохраняем флаг что диалог настроек был открыт
+            val prefs = getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("settings_dialog_open", true).apply()
+            
+            Log.d("MainActivity", "openAccessibilitySettings: Флаг settings_dialog_open установлен в TRUE, dialog?.isShowing=${dialog?.isShowing}")
+            
+            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(intent)
+            
+            Toast.makeText(
+                this,
+                getString(R.string.accessibility_enable_instructions),
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка открытия настроек специальных возможностей: ${e.message}")
+            Toast.makeText(this, "Не удалось открыть настройки", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Открытие селектора BLE: пока что упрощённо — запрашиваем адрес у пользователя через ввод
+    // (дальше можно заменить на полноценный сканер BLE)
+    private fun openBleSelector() {
+        // Не используется — заменено на BleDevicePickerActivity
+    }
+
+    private fun showBleConnectedDevicesDialog(onDeviceSelected: ((String) -> Unit)? = null) {
+        try {
+            val bm = getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
+            val connected = try {
+                bm.getConnectedDevices(android.bluetooth.BluetoothProfile.GATT)
+            } catch (e: SecurityException) {
+                emptyList<android.bluetooth.BluetoothDevice>()
+            }
+            val items = connected
+                .filter { it.type == android.bluetooth.BluetoothDevice.DEVICE_TYPE_LE || it.type == android.bluetooth.BluetoothDevice.DEVICE_TYPE_DUAL }
+                .map { (it.name ?: "(без имени)") + " | " + it.address }
+                .toTypedArray()
+
+            val builder = androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Подключённые BLE-устройства")
+                .setItems(if (items.isNotEmpty()) items else arrayOf("Нет подключённых BLE-устройств")) { dialog, which ->
+                    if (items.isEmpty()) return@setItems
+                    val addr = items[which].substringAfterLast(" | ")
+                    val name = items[which].substringBeforeLast(" | ")
+                    
+                    Log.d(TAG, "📱 Выбрано BLE-устройство: $name ($addr)")
+                    
+                    getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("ble_device_address", addr) // ИСПРАВЛЕН КЛЮЧ!
+                        .putString("ble_device_name", name)
+                        .putBoolean("ble_device_connected", false) // Будет обновлено через BluetoothReceiver
+                        .apply()
+                    
+                    Toast.makeText(this, "BLE-устройство сохранено: $name ($addr)", Toast.LENGTH_LONG).show()
+                    
+                    // Перезапускаем сервис
+                    BluetoothButtonService.stop(this)
+                    BluetoothButtonService.start(this)
+                    
+                    // Вызываем callback для обновления UI
+                    onDeviceSelected?.invoke(name)
+                    
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Отмена", null)
+
+            val dlg = builder.create()
+            dlg.setOnShowListener {
+                val w = dlg.window
+                w?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.WHITE))
+                applyYellowColorToDialogButtons(dlg)
+            }
+            dlg.show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Ошибка отображения устройств: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 2000) {
+            // Включение Bluetooth (если запрашивали)
+            return
+        }
+        if (requestCode == 2003 && resultCode == RESULT_OK) {
+            val addr = data?.getStringExtra("ble_address")?.trim()
+            val name = data?.getStringExtra("ble_name")?.trim() ?: "(без имени)"
+            if (!addr.isNullOrEmpty()) {
+                getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("ble_device_address", addr) // ИСПРАВЛЕН КЛЮЧ!
+                    .putString("ble_device_name", name)
+                    .putBoolean("ble_device_connected", false)
+                    .apply()
+                Toast.makeText(this, "BLE-устройство сохранено: $name ($addr)", Toast.LENGTH_LONG).show()
+                BluetoothButtonService.stop(this)
+                BluetoothButtonService.start(this)
+            }
+        }
+    }
+
+    // Перегрузка onRequestPermissionsResult уже реализована выше (под TELEGRAM/общие разрешения). Дублирующая удалена.
+
+    /**
+     * Применяет жёлтый цвет ко всем кнопкам диалога
+     */
+    private fun applyYellowColorToDialogButtons(dialog: androidx.appcompat.app.AlertDialog) {
+        val yellowColor = getColor(R.color.yellow)
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)?.setTextColor(yellowColor)
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEGATIVE)?.setTextColor(yellowColor)
+        dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_NEUTRAL)?.setTextColor(yellowColor)
+    }
 
 }

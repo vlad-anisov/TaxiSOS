@@ -16,6 +16,18 @@ object TelegramAuthDialogs {
     private const val TAG = "TelegramAuthDialogs"
     
     /**
+     * Применяет жёлтый цвет ко всем кнопкам диалога
+     */
+    private fun applyYellowColorToDialogButtons(context: Context, dialog: AlertDialog) {
+        dialog.setOnShowListener {
+            val yellowColor = context.getColor(R.color.yellow)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(yellowColor)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(yellowColor)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(yellowColor)
+        }
+    }
+    
+    /**
      * Показывает диалог с реальным Telegram Login Widget
      */
     fun showTelegramLoginDialog(
@@ -96,6 +108,7 @@ object TelegramAuthDialogs {
             .setCancelable(false)
             .create()
         
+        applyYellowColorToDialogButtons(context, dialog)
         dialog.show()
     }
     
@@ -183,6 +196,7 @@ object TelegramAuthDialogs {
             .setCancelable(false)
             .create()
         
+        applyYellowColorToDialogButtons(context, dialog)
         dialog.show()
     }
     
@@ -235,6 +249,7 @@ object TelegramAuthDialogs {
             .setCancelable(false)
             .create()
         
+        applyYellowColorToDialogButtons(context, dialog)
         dialog.show()
     }
     
@@ -242,7 +257,7 @@ object TelegramAuthDialogs {
      * Показывает диалог подтверждения выхода
      */
     fun showLogoutConfirmDialog(context: Context, onConfirm: () -> Unit) {
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(context.getString(R.string.logout_title))
             .setMessage(context.getString(R.string.logout_message))
             .setPositiveButton(context.getString(R.string.logout)) { _, _ ->
@@ -250,7 +265,9 @@ object TelegramAuthDialogs {
             }
             .setNegativeButton(context.getString(R.string.cancel)) { _, _ -> }
             .create()
-            .show()
+        
+        applyYellowColorToDialogButtons(context, dialog)
+        dialog.show()
     }
     
     /**
@@ -344,18 +361,20 @@ object TelegramAuthDialogs {
             dialogLayout.addView(phoneText)
         }
         
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setView(dialogLayout)
             .setPositiveButton(context.getString(R.string.ok)) { _, _ -> }
             .create()
-            .show()
+        
+        applyYellowColorToDialogButtons(context, dialog)
+        dialog.show()
     }
     
     /**
      * Показывает диалог ошибки авторизации
      */
     fun showAuthErrorDialog(context: Context, error: String, onRetry: () -> Unit) {
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(context.getString(R.string.auth_error))
             .setMessage(error)
             .setPositiveButton(context.getString(R.string.retry)) { _, _ ->
@@ -363,7 +382,9 @@ object TelegramAuthDialogs {
             }
             .setNegativeButton(context.getString(R.string.cancel)) { _, _ -> }
             .create()
-            .show()
+        
+        applyYellowColorToDialogButtons(context, dialog)
+        dialog.show()
     }
     
     /**
@@ -372,11 +393,14 @@ object TelegramAuthDialogs {
     fun showBotSetupInfoDialog(context: Context) {
         val message = context.getString(R.string.bot_setup_message)
         
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(context.getString(R.string.bot_setup_title))
             .setMessage(message)
             .setPositiveButton(context.getString(R.string.understood), null)
-            .show()
+            .create()
+        
+        applyYellowColorToDialogButtons(context, dialog)
+        dialog.show()
     }
     
     /**
@@ -416,7 +440,7 @@ object TelegramAuthDialogs {
         noteTextView.setTextColor(0xFF666666.toInt())
         dialogLayout.addView(noteTextView)
         
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setView(dialogLayout)
             .setPositiveButton(context.getString(R.string.save)) { _, _ ->
                 val domain = domainInput.text.toString().trim()
@@ -425,6 +449,9 @@ object TelegramAuthDialogs {
                 }
             }
             .setNegativeButton(context.getString(R.string.cancel), null)
-            .show()
+            .create()
+        
+        applyYellowColorToDialogButtons(context, dialog)
+        dialog.show()
     }
 } 

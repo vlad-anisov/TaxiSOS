@@ -7,6 +7,35 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        
+        <!-- Цвета для кнопок и элементов управления -->
+        <item name="colorPrimary">@color/yellow</item>
+        <item name="colorPrimaryVariant">@color/yellow</item>
+        <item name="colorAccent">@color/yellow</item>
+        <item name="colorSecondary">@color/yellow</item>
+        <item name="colorSecondaryVariant">@color/yellow</item>
+        
+        <!-- Цвета для кнопок в диалогах -->
+        <item name="buttonBarPositiveButtonStyle">@style/YellowPositiveButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/YellowNegativeButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/YellowNeutralButton</item>
+        
+        <!-- Цвет для ползунков (SeekBar, Slider) -->
+        <item name="colorControlActivated">@color/yellow</item>
+        <item name="colorControlHighlight">@color/yellow</item>
+    </style>
+    
+    <!-- Стили для кнопок в диалогах -->
+    <style name="YellowPositiveButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/yellow</item>
+    </style>
+    
+    <style name="YellowNegativeButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/yellow</item>
+    </style>
+    
+    <style name="YellowNeutralButton" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/yellow</item>
     </style>
 
 </resources>

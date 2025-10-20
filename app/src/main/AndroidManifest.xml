@@ -33,6 +33,19 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     
+    <!-- Разрешение для Bluetooth Button Service (Android 14+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
+    <!-- BLE permissions (scoped by SDK level) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Для сканирования BLE на Android <= 11 используется геолокация (уже есть ACCESS_FINE_LOCATION) -->
+
+    <!-- BLE feature -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    
 
 
     <!-- Объявляем характеристики камеры для Google Play Store -->
@@ -96,6 +109,48 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- Bluetooth Button Service для обработки нажатий в фоне -->
+        <service
+            android:name=".BluetoothButtonService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- MediaButtonReceiver для перехвата медиа-событий от Bluetooth-кнопок -->
+        <receiver
+            android:name=".MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter android:priority="2147483647">
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Accessibility Service для перехвата кнопок громкости (для дешевых Bluetooth-кнопок) -->
+        <service
+            android:name=".VolumeButtonAccessibilityService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Activity выбора BLE-устройства -->
+        <activity
+            android:name=".BleDevicePickerActivity"
+            android:exported="false"
+            android:label="Выбор BLE-устройства" />
+
+        <!-- Ресивер для подключения/отключения выбранного BT-устройства -->
+        <receiver android:name=".BluetoothReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>
