@@ -116,6 +116,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
       private const val PREFS_TAXI = "taxi_sos_prefs"
       private const val KEY_SEGMENT_DURATION_SECONDS = "segment_duration_seconds"
       private const val KEY_LAST_SENT_FILE_NAME = "last_sent_file_name"
+      private const val KEY_SAVE_SEGMENTS_TO_GALLERY = "save_segments_to_gallery"
       private const val MIN_SEGMENT_DURATION_SECONDS = 10
       private const val MAX_SEGMENT_DURATION_SECONDS = 300
     }
@@ -188,6 +189,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             override fun surfaceDestroyed(holder: SurfaceHolder) {
                 Log.d("MainActivity", "Surface уничтожен")
                 isSurfaceReady = false
+                
+                // Останавливаем предпросмотр камеры при уничтожении Surface
+                try {
+                    streamingCamera?.stopPreview()
+                    recordingCamera?.stopPreview()
+                    Log.d("MainActivity", "Предпросмотр камеры остановлен")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка остановки предпросмотра: ${e.message}")
+                }
             }
         })
         
@@ -338,12 +348,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             Log.d("MainActivity", "Обновляем UI: isEnabled=$isEnabled")
             
             if (isEnabled) {
-                enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
-                accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+                enableAccessibilityButton?.text = getString(R.string.accessibility_enabled_button)
+                accessibilityInfoText?.text = getString(R.string.accessibility_enabled_info)
                 accessibilityInfoText?.setTextColor(0xFF00AA00.toInt()) // Зелёный
             } else {
-                enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
-                accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+                enableAccessibilityButton?.text = getString(R.string.accessibility_required_button)
+                accessibilityInfoText?.text = getString(R.string.accessibility_disabled_info)
                 accessibilityInfoText?.setTextColor(0xFFFF0000.toInt()) // Красный
             }
             
@@ -802,6 +812,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
         
+        // Чекбокс для сохранения сегментов в галерею
+        val saveToGalleryCheckBox = CheckBox(this)
+        saveToGalleryCheckBox.text = getString(R.string.save_segments_to_gallery)
+        saveToGalleryCheckBox.textSize = 14f
+        saveToGalleryCheckBox.setPadding(0, 20, 0, 0)
+        saveToGalleryCheckBox.isChecked = sharedPrefs.getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+        dialogLayout.addView(saveToGalleryCheckBox)
+        
         // Разделитель перед настройками Bluetooth-кнопки
         val dividerBluetooth = View(this)
         dividerBluetooth.setBackgroundColor(0x20000000)
@@ -886,7 +904,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
         // Кнопка выбора BLE-устройства (опционально)
         val selectBleButton = Button(this)
-        selectBleButton.text = "Выбрать Bluetooth кнопку"
+        selectBleButton.text = getString(R.string.select_bluetooth_button)
         selectBleButton.isAllCaps = false
         
         // TextView для отображения выбранного устройства
@@ -899,7 +917,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val savedDeviceName = sharedPrefs.getString("ble_device_name", null)
         val savedDeviceAddr = sharedPrefs.getString("ble_device_address", null)
         if (savedDeviceName != null && savedDeviceAddr != null) {
-            selectedDeviceText.text = "✓ Выбрано: $savedDeviceName"
+            selectedDeviceText.text = getString(R.string.selected_device_prefix, savedDeviceName)
             selectedDeviceText.visibility = View.VISIBLE
         } else {
             selectedDeviceText.visibility = View.GONE
@@ -918,7 +936,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 }
                 showBleConnectedDevicesDialog { deviceName ->
                     // Обновляем TextView после выбора устройства
-                    selectedDeviceText.text = "✓ Выбрано: $deviceName"
+                    selectedDeviceText.text = getString(R.string.selected_device_prefix, deviceName)
                     selectedDeviceText.visibility = View.VISIBLE
                 }
             } catch (e: Exception) {
@@ -974,12 +992,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // Проверяем, включена ли служба специальных возможностей
         val isAccessibilityEnabled = isAccessibilityServiceEnabled()
         if (isAccessibilityEnabled) {
-            enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
-            accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+            enableAccessibilityButton?.text = getString(R.string.accessibility_enabled_button)
+            accessibilityInfoText?.text = getString(R.string.accessibility_enabled_info)
             accessibilityInfoText?.setTextColor(0xFF00AA00.toInt()) // Зелёный цвет
         } else {
-            enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
-            accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+            enableAccessibilityButton?.text = getString(R.string.accessibility_required_button)
+            accessibilityInfoText?.text = getString(R.string.accessibility_disabled_info)
             accessibilityInfoText?.setTextColor(0xFFFF0000.toInt()) // Красный цвет для важного предупреждения
         }
         
@@ -1028,6 +1046,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         (segmentDurationSeekBar.progress + MIN_SEGMENT_DURATION_SECONDS)
                             .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
                     )
+                    // Сохраняем настройку сохранения сегментов в галерею
+                    .putBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, saveToGalleryCheckBox.isChecked)
                     // Сохраняем настройки Bluetooth-кнопки
                     .putBoolean("bluetooth_button_enabled", true)
                     .putString("bluetooth_button_action", bluetoothButtonAction)
@@ -1105,12 +1125,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             // Это важно, если пользователь только что вернулся из настроек
             val isEnabled = isAccessibilityServiceEnabled()
             if (isEnabled) {
-                enableAccessibilityButton?.text = "✓ Служба включена (нажмите для настройки)"
-                accessibilityInfoText?.text = "✅ Служба специальных возможностей включена и работает"
+                enableAccessibilityButton?.text = getString(R.string.accessibility_enabled_button)
+                accessibilityInfoText?.text = getString(R.string.accessibility_enabled_info)
                 accessibilityInfoText?.setTextColor(0xFF00AA00.toInt())
             } else {
-                enableAccessibilityButton?.text = "⚠️ ТРЕБУЕТСЯ: Включить службу"
-                accessibilityInfoText?.text = "⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать."
+                enableAccessibilityButton?.text = getString(R.string.accessibility_required_button)
+                accessibilityInfoText?.text = getString(R.string.accessibility_disabled_info)
                 accessibilityInfoText?.setTextColor(0xFFFF0000.toInt())
             }
         }
@@ -1249,7 +1269,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         try {
             streamingCamera?.stopStream()
             streamingCamera?.stopRecord()
-          recordingCamera?.stopRecord()
+            streamingCamera?.stopPreview()
+            recordingCamera?.stopRecord()
+            recordingCamera?.stopPreview()
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка остановки камер: ${e.message}")
         }
@@ -1408,6 +1430,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         if (file.exists() && file.length() > 1000) {
                             // Сканируем файл и отправляем
                             MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), null, null)
+                            
+                            // Копируем в галерею, если настройка включена
+                            val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                                .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+                            if (shouldSaveToGallery) {
+                                copyVideoToGallery(file)
+                            }
+                            
                             sendVideo(file)
                             Log.d("MainActivity", "Сегмент $segmentCount отправлен")
                         } else {
@@ -1490,6 +1520,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
           if (fileToSend != null && fileToSend.exists() && fileToSend.length() > 0) {
               // Сканируем файл
               MediaScannerConnection.scanFile(this, arrayOf(fileToSend.absolutePath), null, null)
+              
+              // Копируем в галерею, если настройка включена
+              val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                  .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+              if (shouldSaveToGallery) {
+                  copyVideoToGallery(fileToSend)
+              }
 
               // Отправляем синхронно (блокирующе), чтобы гарантировать отправку до закрытия
               Log.d("MainActivity", "Отправка финального сегмента: ${fileToSend.name}, размер=${fileToSend.length()} байт")
@@ -1551,9 +1588,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
           Log.e("MainActivity", "Ошибка отправки видео контактам: ${e.message}")
       }
 
-      // Удаляем файл после отправки
+      // Удаляем файл после отправки (если не включено сохранение в галерею)
       try {
-          if (videoFile.exists()) videoFile.delete()
+          val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+              .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+          
+          if (!shouldSaveToGallery && videoFile.exists()) {
+              videoFile.delete()
+              Log.d("MainActivity", "Файл ${videoFile.name} удален после отправки")
+          } else if (shouldSaveToGallery) {
+              Log.d("MainActivity", "Файл ${videoFile.name} сохранен в галерею")
+          }
       } catch (_: Exception) {}
   }
 
@@ -1592,9 +1637,15 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     delay(2000)
                 }
                 
-                // Удаляем файл после отправки
-                if (videoFile.exists()) {
+                // Удаляем файл после отправки (если не включено сохранение в галерею)
+                val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+                
+                if (!shouldSaveToGallery && videoFile.exists()) {
                     videoFile.delete()
+                    Log.d("MainActivity", "Файл ${videoFile.name} удален после отправки")
+                } else if (shouldSaveToGallery) {
+                    Log.d("MainActivity", "Файл ${videoFile.name} сохранен в галерею")
                 }
             } catch (e: Exception) {
                 Log.e("MainActivity", "Network error while sending video: ${e.message}")
@@ -1628,6 +1679,56 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 Log.e("MainActivity", "Ошибка при отправке видео контакту ${contact.name}: ${e.message}")
                 continuation.resume(Unit)
             }
+        }
+    }
+    
+    // Функция для копирования видео файла в галерею
+    private fun copyVideoToGallery(sourceFile: File) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                // Для Android 10+ используем MediaStore API
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, sourceFile.name)
+                    put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                    put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_MOVIES + "/Taxi SOS")
+                    put(android.provider.MediaStore.Video.Media.IS_PENDING, 1)
+                }
+                
+                val resolver = contentResolver
+                val uri = resolver.insert(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+                
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { outputStream ->
+                        sourceFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    
+                    // Обновляем IS_PENDING чтобы файл стал виден в галерее
+                    contentValues.clear()
+                    contentValues.put(android.provider.MediaStore.Video.Media.IS_PENDING, 0)
+                    resolver.update(uri, contentValues, null, null)
+                    
+                    Log.d("MainActivity", "Видео ${sourceFile.name} скопировано в галерею")
+                }
+            } else {
+                // Для старых версий Android сохраняем в публичную директорию
+                val moviesDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES)
+                val taxiSosDir = File(moviesDir, "Taxi SOS")
+                if (!taxiSosDir.exists()) {
+                    taxiSosDir.mkdirs()
+                }
+                
+                val destFile = File(taxiSosDir, sourceFile.name)
+                sourceFile.copyTo(destFile, overwrite = true)
+                
+                // Сканируем файл чтобы он появился в галерее
+                MediaScannerConnection.scanFile(this, arrayOf(destFile.absolutePath), arrayOf("video/mp4"), null)
+                
+                Log.d("MainActivity", "Видео ${sourceFile.name} скопировано в галерею")
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка копирования видео в галерею: ${e.message}")
         }
     }
 
@@ -1665,9 +1766,17 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         // Принудительно освобождаем камеры
         try {
+            Log.d("MainActivity", "Освобождение ресурсов камер...")
             streamingCamera?.stopStream()
             streamingCamera?.stopRecord()
+            streamingCamera?.stopPreview()
             recordingCamera?.stopRecord()
+            recordingCamera?.stopPreview()
+            
+            // Обнуляем ссылки на камеры
+            streamingCamera = null
+            recordingCamera = null
+            Log.d("MainActivity", "Ресурсы камер освобождены")
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка освобождения камер: ${e.message}")
         }
@@ -2646,12 +2755,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
             val items = connected
                 .filter { it.type == android.bluetooth.BluetoothDevice.DEVICE_TYPE_LE || it.type == android.bluetooth.BluetoothDevice.DEVICE_TYPE_DUAL }
-                .map { (it.name ?: "(без имени)") + " | " + it.address }
+                .map { (it.name ?: getString(R.string.device_no_name)) + " | " + it.address }
                 .toTypedArray()
 
             val builder = androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Подключённые BLE-устройства")
-                .setItems(if (items.isNotEmpty()) items else arrayOf("Нет подключённых BLE-устройств")) { dialog, which ->
+                .setTitle(getString(R.string.ble_devices_dialog_title))
+                .setItems(if (items.isNotEmpty()) items else arrayOf(getString(R.string.no_ble_devices))) { dialog, which ->
                     if (items.isEmpty()) return@setItems
                     val addr = items[which].substringAfterLast(" | ")
                     val name = items[which].substringBeforeLast(" | ")
@@ -2665,7 +2774,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         .putBoolean("ble_device_connected", false) // Будет обновлено через BluetoothReceiver
                         .apply()
                     
-                    Toast.makeText(this, "BLE-устройство сохранено: $name ($addr)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.ble_device_saved, "$name ($addr)"), Toast.LENGTH_LONG).show()
                     
                     // Перезапускаем сервис
                     BluetoothButtonService.stop(this)
@@ -2676,7 +2785,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     
                     dialog.dismiss()
                 }
-                .setNegativeButton("Отмена", null)
+                .setNegativeButton(getString(R.string.cancel), null)
 
             val dlg = builder.create()
             dlg.setOnShowListener {
@@ -2686,7 +2795,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
             dlg.show()
         } catch (e: Exception) {
-            Toast.makeText(this, "Ошибка отображения устройств: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.error_showing_devices, e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2698,7 +2807,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
         if (requestCode == 2003 && resultCode == RESULT_OK) {
             val addr = data?.getStringExtra("ble_address")?.trim()
-            val name = data?.getStringExtra("ble_name")?.trim() ?: "(без имени)"
+            val name = data?.getStringExtra("ble_name")?.trim() ?: getString(R.string.device_no_name)
             if (!addr.isNullOrEmpty()) {
                 getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
                     .edit()
@@ -2706,7 +2815,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     .putString("ble_device_name", name)
                     .putBoolean("ble_device_connected", false)
                     .apply()
-                Toast.makeText(this, "BLE-устройство сохранено: $name ($addr)", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, getString(R.string.ble_device_saved, "$name ($addr)"), Toast.LENGTH_LONG).show()
                 BluetoothButtonService.stop(this)
                 BluetoothButtonService.start(this)
             }

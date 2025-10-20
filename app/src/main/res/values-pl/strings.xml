@@ -89,6 +89,7 @@
     
     <!-- Długość segmentu wideo -->
     <string name="video_segment_length">Długość segmentu wideo</string>
+    <string name="save_segments_to_gallery">Zapisuj segmenty wideo w galerii</string>
     <string name="video_segment_length_hint">Od 10 sekund do 5 minut</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minuta</item>
@@ -116,4 +117,19 @@
     <string name="accessibility_service_description">Usługa do przechwytywania naciśnięć przycisku Bluetooth w aplikacji Taxi SOS. Umożliwia szybkie uruchamianie nagrywania/transmisji awaryjnej.</string>
     <string name="accessibility_settings_title">Ustawienia ułatwień dostępu</string>
     <string name="accessibility_enable_instructions">Znajdź \"Taxi SOS\" na liście i włącz usługę</string>
+    
+    <!-- Status usługi ułatwień dostępu -->
+    <string name="accessibility_required_button">⚠️ WYMAGANE: Włącz usługę</string>
+    <string name="accessibility_enabled_button">✓ Usługa włączona (dotknij, aby skonfigurować)</string>
+    <string name="accessibility_enabled_info">✅ Usługa ułatwień dostępu jest włączona i działa</string>
+    <string name="accessibility_disabled_info">⚠️ OBOWIĄZKOWO: Usługa ułatwień dostępu NIE jest włączona!\n\nBez niej przycisk Bluetooth NIE będzie działać.</string>
+    
+    <!-- Wybór urządzenia Bluetooth -->
+    <string name="select_bluetooth_button">Wybierz przycisk Bluetooth</string>
+    <string name="selected_device_prefix">✓ Wybrano: %s</string>
+    <string name="ble_devices_dialog_title">Podłączone urządzenia BLE</string>
+    <string name="no_ble_devices">Brak podłączonych urządzeń BLE</string>
+    <string name="device_no_name">(bez nazwy)</string>
+    <string name="ble_device_saved">Urządzenie BLE zapisane: %s</string>
+    <string name="error_showing_devices">Błąd wyświetlania urządzeń: %s</string>
 </resources>

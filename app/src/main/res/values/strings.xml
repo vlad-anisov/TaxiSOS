@@ -121,6 +121,7 @@
     
     <!-- Длительность видеосегмента -->
     <string name="video_segment_length">Длительность видео сегмента</string>
+    <string name="save_segments_to_gallery">Сохранять видео сегменты в галерею</string>
     <string name="video_segment_length_hint">От 10 секунд до 5 минут</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d минута</item>
@@ -148,4 +149,19 @@
     <string name="accessibility_service_description">Служба для перехвата нажатий Bluetooth-кнопки в приложении Taxi SOS. Позволяет быстро запускать экстренную запись/трансляцию.</string>
     <string name="accessibility_settings_title">Настройки специальных возможностей</string>
     <string name="accessibility_enable_instructions">Найдите \"Taxi SOS\" в списке и включите службу</string>
+    
+    <!-- Статусы службы специальных возможностей -->
+    <string name="accessibility_required_button">⚠️ ТРЕБУЕТСЯ: Включить службу</string>
+    <string name="accessibility_enabled_button">✓ Служба включена (нажмите для настройки)</string>
+    <string name="accessibility_enabled_info">✅ Служба специальных возможностей включена и работает</string>
+    <string name="accessibility_disabled_info">⚠️ ОБЯЗАТЕЛЬНО: Служба специальных возможностей НЕ включена!\n\nБез неё Bluetooth-кнопка НЕ будет работать.</string>
+    
+    <!-- Выбор Bluetooth-устройства -->
+    <string name="select_bluetooth_button">Выбрать Bluetooth кнопку</string>
+    <string name="selected_device_prefix">✓ Выбрано: %s</string>
+    <string name="ble_devices_dialog_title">Подключённые BLE-устройства</string>
+    <string name="no_ble_devices">Нет подключённых BLE-устройств</string>
+    <string name="device_no_name">(без имени)</string>
+    <string name="ble_device_saved">BLE-устройство сохранено: %s</string>
+    <string name="error_showing_devices">Ошибка отображения устройств: %s</string>
 </resources>

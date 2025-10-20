@@ -121,6 +121,7 @@
     
     <!-- Video segment length -->
     <string name="video_segment_length">Video segment length</string>
+    <string name="save_segments_to_gallery">Save video segments to gallery</string>
     <string name="video_segment_length_hint">From 10 seconds to 5 minutes</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minute</item>
@@ -144,5 +145,20 @@
     <string name="accessibility_service_description">Service to intercept Bluetooth button presses in Taxi SOS app. Allows quick emergency recording/streaming launch.</string>
     <string name="accessibility_settings_title">Accessibility settings</string>
     <string name="accessibility_enable_instructions">Find \"Taxi SOS\" in the list and enable the service</string>
+    
+    <!-- Accessibility service status -->
+    <string name="accessibility_required_button">⚠️ REQUIRED: Enable service</string>
+    <string name="accessibility_enabled_button">✓ Service enabled (tap to configure)</string>
+    <string name="accessibility_enabled_info">✅ Accessibility service is enabled and working</string>
+    <string name="accessibility_disabled_info">⚠️ MANDATORY: Accessibility service is NOT enabled!\n\nWithout it, the Bluetooth button will NOT work.</string>
+    
+    <!-- Bluetooth device selection -->
+    <string name="select_bluetooth_button">Select Bluetooth button</string>
+    <string name="selected_device_prefix">✓ Selected: %s</string>
+    <string name="ble_devices_dialog_title">Connected BLE devices</string>
+    <string name="no_ble_devices">No connected BLE devices</string>
+    <string name="device_no_name">(no name)</string>
+    <string name="ble_device_saved">BLE device saved: %s</string>
+    <string name="error_showing_devices">Error displaying devices: %s</string>
 </resources>
 
