@@ -1248,19 +1248,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         Log.d("MainActivity", "Начинаем остановку")
         isActive = false
-        // Отменяем авто-остановку, если была запланирована
-        try {
-            autoStopJob?.cancel()
-            autoStopJob = null
-        } catch (_: Exception) {}
 
-      // Принудительно завершаем и отправляем последний сегмент (даже неполный)
-      try {
-          finalizeLastSegmentBlocking()
-      } catch (e: Exception) {
-          Log.e("MainActivity", "Ошибка при финализации последнего сегмента: ${e.message}")
-      }
-        
         // Останавливаем геолокацию
         try {
             stopLiveLocation()
@@ -1272,9 +1260,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         try {
             streamingCamera?.stopStream()
             streamingCamera?.stopRecord()
-            streamingCamera?.stopPreview()
             recordingCamera?.stopRecord()
-            recordingCamera?.stopPreview()
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка остановки камер: ${e.message}")
         }
@@ -1303,9 +1289,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // Сбрасываем флаги инициализации камер
         isStreamingCameraPrepared = false
         isRecordingCameraPrepared = false
-        
-        // Сбрасываем флаг финализации последнего сегмента
-        isFinalizingLastSegment = false
     }
 
     private fun startStream() {
