@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
   // Текущий записываемый сегмент
   private var currentSegmentFile: java.io.File? = null
   private var isSegmentRecordingActive: Boolean = false
+  private var isFinalizingLastSegment: Boolean = false
     // Добавляем класс для хранения данных канала
     data class ChannelInfo(val name: String, val url: String, val key: String)
     // Список каналов
@@ -125,7 +126,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private var autoStopJob: Job? = null
 
     // Добавим свойство для телеграм-авторизации в класс MainActivity
-    private lateinit var telegramAuthHelper: TelegramAuthHelper
+    private val telegramAuthHelper: TelegramAuthHelper by lazy {
+        TelegramAuthHelper.getInstance(applicationContext)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Применяем язык перед созданием активности
@@ -144,13 +147,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         loadRtmpSettings()
         loadUserSettings()
         
-        // Инициализируем помощник авторизации Telegram только если он еще не инициализирован
-        if (!::telegramAuthHelper.isInitialized && !isClosingFromTile) {
-            telegramAuthHelper = TelegramAuthHelper(this)
-            // Инициализируем TelegramAuthHelper только один раз
+        // Инициализируем помощник авторизации Telegram
+        // Используем singleton, поэтому повторная инициализация безопасна
+        if (!isClosingFromTile) {
             initializeTelegramAuth()
-        } else {
-            Log.d("MainActivity", "TelegramAuthHelper уже инициализирован или приложение закрывается")
         }
         
         val layout = FrameLayout(this)
@@ -1170,6 +1170,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         
         Log.d("MainActivity", "Начинаем запуск с режимом $currentWorkMode")
         
+        // Сбрасываем флаг финализации последнего сегмента при новом старте
+        isFinalizingLastSegment = false
+        
         // Проверяем разрешения перед началом
         if (!checkPermissions()) {
             Log.d("MainActivity", "Разрешения не получены, запрашиваем")
@@ -1300,6 +1303,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         // Сбрасываем флаги инициализации камер
         isStreamingCameraPrepared = false
         isRecordingCameraPrepared = false
+        
+        // Сбрасываем флаг финализации последнего сегмента
+        isFinalizingLastSegment = false
     }
 
     private fun startStream() {
@@ -1428,18 +1434,23 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         
                         // Проверяем, что файл создался и имеет корректный размер
                         if (file.exists() && file.length() > 1000) {
-                            // Сканируем файл и отправляем
-                            MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), null, null)
-                            
-                            // Копируем в галерею, если настройка включена
-                            val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
-                                .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
-                            if (shouldSaveToGallery) {
-                                copyVideoToGallery(file)
+                            // Проверяем, не началась ли финализация последнего сегмента
+                            if (isFinalizingLastSegment) {
+                                Log.d("MainActivity", "Пропускаем отправку сегмента $segmentCount - идет финализация последнего сегмента")
+                            } else {
+                                // Сканируем файл и отправляем
+                                MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), null, null)
+                                
+                                // Копируем в галерею, если настройка включена
+                                val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                                    .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
+                                if (shouldSaveToGallery) {
+                                    copyVideoToGallery(file)
+                                }
+                                
+                                sendVideo(file)
+                                Log.d("MainActivity", "Сегмент $segmentCount отправлен")
                             }
-                            
-                            sendVideo(file)
-                            Log.d("MainActivity", "Сегмент $segmentCount отправлен")
                         } else {
                             Log.w("MainActivity", "Файл сегмента $segmentCount не создался или слишком мал: ${file.length()} байт")
                             // Удаляем некорректный файл
@@ -1484,6 +1495,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
   }
 
   private suspend fun finalizeAndSendLastSegment() {
+      // Устанавливаем флаг финализации, чтобы избежать двойной отправки
+      isFinalizingLastSegment = true
+      
       var lastFile = currentSegmentFile
       // Если ничего не записывается, нечего завершать
       if (lastFile == null && !isSegmentRecordingActive) {
@@ -1491,7 +1505,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
           lastFile = tryFindLatestSegmentFile()
           Log.d("MainActivity", "Резервный поиск файла сегмента: ${lastFile?.name}")
       }
-      if (lastFile == null) return
+      if (lastFile == null) {
+          isFinalizingLastSegment = false
+          return
+      }
 
       try {
           // Останавливаем запись, если еще идет
@@ -1755,13 +1772,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
         
         // Освобождаем ресурсы TDLib
-        if (::telegramAuthHelper.isInitialized) {
-            try {
-                Log.d("MainActivity", "Освобождаем ресурсы TelegramAuthHelper в onDestroy")
-                telegramAuthHelper.destroy()
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Ошибка освобождения TelegramAuthHelper в onDestroy: ${e.message}")
-            }
+        // Не нужно проверять инициализацию для lazy val
+        try {
+            Log.d("MainActivity", "Освобождаем ресурсы TelegramAuthHelper в onDestroy")
+            // Не вызываем destroy для singleton, так как он может использоваться в других Activity
+            // telegramAuthHelper.destroy()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка освобождения TelegramAuthHelper в onDestroy: ${e.message}")
         }
         
         // Принудительно освобождаем камеры
@@ -2662,10 +2679,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                         StreamingTileService.setTileState(this, false)
                         VideoSegmentsTileService.setTileState(this, false)
                     } catch (_: Exception) {}
-                    // Освобождаем ресурсы Telegram
-                    if (::telegramAuthHelper.isInitialized) {
-                        try { telegramAuthHelper.destroy() } catch (_: Exception) {}
-                    }
+                    // Не уничтожаем singleton TelegramAuthHelper, так как он может использоваться в других Activity
                     try { ioScope.cancel() } catch (_: Exception) {}
                 }, 1000)
             }

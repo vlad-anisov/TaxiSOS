@@ -8,8 +8,9 @@ import org.drinkless.tdlib.TdApi
 import android.os.Handler
 import android.os.Looper
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
-class TelegramAuthHelper(private val context: Context) {
+class TelegramAuthHelper private constructor(private val context: Context) {
     
     companion object {
         private const val TAG = "TelegramAuthHelper"
@@ -22,6 +23,18 @@ class TelegramAuthHelper(private val context: Context) {
         // Тестовые API ключи для диагностики (работают только с тестовыми серверами)
         private const val TEST_API_ID = 94575  // Официальный тестовый API ID
         private const val TEST_API_HASH = "a3406de8d171bb422bb6ddf3480800fd"  // Соответствующий hash
+        
+        @Volatile
+        private var INSTANCE: TelegramAuthHelper? = null
+        
+        fun getInstance(context: Context): TelegramAuthHelper {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: TelegramAuthHelper(context.applicationContext).also { 
+                    INSTANCE = it
+                    Log.d(TAG, "Создан новый singleton экземпляр TelegramAuthHelper")
+                }
+            }
+        }
     }
     
     private var client: Client? = null
@@ -87,6 +100,21 @@ class TelegramAuthHelper(private val context: Context) {
         this.authCallback = callback
         
         try {
+            // Закрываем старый клиент, если он существует
+            if (client != null) {
+                Log.w(TAG, "Обнаружен старый клиент, закрываем его")
+                try {
+                    client?.send(TdApi.Close()) { }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Ошибка закрытия старого клиента: ${e.message}")
+                }
+                client = null
+                Thread.sleep(500) // Даем время на закрытие
+            }
+            
+            // Очищаем файлы блокировки, если они существуют
+            cleanupLockFiles()
+            
             // Создаем TDLib клиент с новым API
             client = Client.create(
                 { update -> handleUpdate(update) },  // updateHandler
@@ -103,6 +131,32 @@ class TelegramAuthHelper(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Ошибка инициализации TDLib: ${e.message}")
             authCallback?.onError("Ошибка инициализации: ${e.message}")
+        }
+    }
+    
+    private fun cleanupLockFiles() {
+        try {
+            val databaseDir = context.cacheDir.absolutePath + "/tdlib"
+            val databaseFile = java.io.File(databaseDir)
+            if (databaseFile.exists()) {
+                // Удаляем файлы блокировки
+                val lockFiles = databaseFile.listFiles { file ->
+                    file.name.endsWith(".binlog.lock") || 
+                    file.name.endsWith(".lock") ||
+                    file.name == "td.binlog.lock"
+                }
+                lockFiles?.forEach { lockFile ->
+                    try {
+                        if (lockFile.delete()) {
+                            Log.d(TAG, "Удален файл блокировки: ${lockFile.name}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Не удалось удалить файл блокировки ${lockFile.name}: ${e.message}")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка очистки файлов блокировки: ${e.message}")
         }
     }
     
@@ -397,31 +451,58 @@ class TelegramAuthHelper(private val context: Context) {
             Log.d(TAG, "parseContacts: начинаем парсинг ${users.userIds.size} контактов")
             contactsList.clear()
             
+            // Добавляем "Избранное" (чат с самим собой) в начало списка
+            currentUser?.let { user ->
+                val savedMessagesContact = TelegramContact(
+                    id = user.id,
+                    name = "⭐ Избранное",  // Специальное имя для чата с самим собой
+                    phone = user.phone_number ?: "",
+                    username = user.username
+                )
+                contactsList.add(savedMessagesContact)
+                Log.d(TAG, "parseContacts: добавлен контакт 'Избранное' (самому себе)")
+            }
+            
             if (users.userIds.isEmpty()) {
                 Log.w(TAG, "parseContacts: список ID пользователей пуст")
                 mainHandler.post {
-                    authCallback?.onContactsReceived(emptyList())
+                    authCallback?.onContactsReceived(contactsList.toList())
                 }
                 return
             }
+            
+            // Счетчик обработанных контактов (thread-safe)
+            val processedContacts = AtomicInteger(0)
+            val totalContacts = users.userIds.size
             
             for (userId in users.userIds) {
                 Log.d(TAG, "parseContacts: запрашиваем информацию о пользователе $userId")
                 getUserInfo(userId) { user ->
                     if (user != null) {
-                        val contact = TelegramContact(
-                            id = user.id,
-                            name = "${user.firstName} ${user.lastName}".trim(),
-                            phone = user.phoneNumber,
-                            username = user.usernames?.let { usernames ->
-                                if (usernames.activeUsernames.isNotEmpty()) usernames.activeUsernames[0] else null
+                        // Пропускаем самого себя, так как уже добавили "Избранное"
+                        if (user.id != currentUser?.id) {
+                            synchronized(contactsList) {
+                                val contact = TelegramContact(
+                                    id = user.id,
+                                    name = "${user.firstName} ${user.lastName}".trim(),
+                                    phone = user.phoneNumber,
+                                    username = user.usernames?.let { usernames ->
+                                        if (usernames.activeUsernames.isNotEmpty()) usernames.activeUsernames[0] else null
+                                    }
+                                )
+                                contactsList.add(contact)
+                                Log.d(TAG, "parseContacts: добавлен контакт ${contact.name} (${contact.phone})")
                             }
-                        )
-                        contactsList.add(contact)
-                        Log.d(TAG, "parseContacts: добавлен контакт ${contact.name} (${contact.phone}), всего: ${contactsList.size}/${users.userIds.size}")
+                        } else {
+                            Log.d(TAG, "parseContacts: пропускаем самого себя (уже добавлен как Избранное)")
+                        }
                         
-                        // Уведомляем о получении контактов после получения всех
-                        if (contactsList.size == users.userIds.size) {
+                        // Увеличиваем счетчик обработанных контактов
+                        val processed = processedContacts.incrementAndGet()
+                        Log.d(TAG, "parseContacts: обработано $processed/$totalContacts, в списке: ${contactsList.size}")
+                        
+                        // Уведомляем о получении контактов после обработки всех
+                        if (processed == totalContacts) {
                             Log.d(TAG, "parseContacts: все контакты получены, отправляем callback")
                             mainHandler.post {
                                 authCallback?.onContactsReceived(contactsList.toList())
@@ -429,6 +510,13 @@ class TelegramAuthHelper(private val context: Context) {
                         }
                     } else {
                         Log.w(TAG, "parseContacts: не удалось получить информацию о пользователе $userId")
+                        val processed = processedContacts.incrementAndGet()
+                        if (processed == totalContacts) {
+                            Log.d(TAG, "parseContacts: все контакты обработаны, отправляем callback")
+                            mainHandler.post {
+                                authCallback?.onContactsReceived(contactsList.toList())
+                            }
+                        }
                     }
                 }
             }
@@ -634,7 +722,16 @@ class TelegramAuthHelper(private val context: Context) {
     }
 
     fun destroy() {
+        Log.d(TAG, "Уничтожение TelegramAuthHelper")
+        try {
+            client?.send(TdApi.Close()) { result ->
+                Log.d(TAG, "Клиент TDLib закрыт")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка при закрытии клиента: ${e.message}")
+        }
         client = null
         isInitialized = false
+        authCallback = null
     }
 } 
