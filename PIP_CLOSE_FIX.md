@@ -117,3 +117,4 @@ if (isClosingFromTile) {
 - `AUTO_CLOSE_APP_FIX.md` - предыдущее исправление автозакрытия
 - `CAMERA_NOT_CLOSING_FIX.md` - исправление освобождения ресурсов камеры
 
+

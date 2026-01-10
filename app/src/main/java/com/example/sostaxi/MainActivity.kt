@@ -33,6 +33,8 @@ import android.content.res.Configuration
 import android.os.Bundle
 import android.app.ProgressDialog
 import android.view.SurfaceHolder
+import org.json.JSONObject
+import java.io.FileOutputStream
 
 
 class MainActivity : AppCompatActivity(), ConnectChecker {
@@ -58,6 +60,20 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
   private var currentSegmentFile: java.io.File? = null
   private var isSegmentRecordingActive: Boolean = false
   private var isFinalizingLastSegment: Boolean = false
+  // Раздельные счётчики сегментов для каждого направления
+  private var sentSegmentCountGroup: Int = 0      // Счётчик для группы
+  private var sentSegmentCountContacts: Int = 0   // Счётчик для контактов
+  
+  // Хранение ID сообщений для группы (Bot API): segmentNumber -> messageId
+  private var botGroupMessageIds = mutableMapOf<Int, Int>()
+  // Хранение ID сообщений для контактов (TDLib): contactId -> (segmentNumber -> (chatId, messageId))
+  private var contactMessageIds = mutableMapOf<Long, MutableMap<Int, Pair<Long, Long>>>()
+  
+  // Флаги активности плиток (независимые)
+  @Volatile private var isTileSendToGroupActive = false
+  @Volatile private var isTileSendToContactsActive = false
+  @Volatile private var isTileSaveToGalleryActive = false
+  
     // Добавляем класс для хранения данных канала
     data class ChannelInfo(val name: String, val url: String, val key: String)
     // Список каналов
@@ -80,7 +96,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     
     // Информация о пользователе
     private var userName: String = ""
-    private var userLastName: String = ""
     private var userCar: String = ""
     private var userCarColor: String = ""
     
@@ -105,9 +120,32 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     companion object {
         private const val TAG = "MainActivity"
         @Volatile var isActive: Boolean = false
+        // Отдельный scope для критичных отправок при остановке/закрытии (не привязан к lifecycle Activity)
+        private val backgroundSendScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        const val TELEGRAM_BOT_TOKEN = "7960834986:AAGr7DfkvN2cRi2FWWqKMVhbmIbu9li6SFE"
-        const val TELEGRAM_CHAT_ID = "-4706227781"
+        const val TELEGRAM_CHAT_ID = "-1003132262418"
+        
+        /**
+         * Токен бота не хранится одной строкой, чтобы его нельзя было просто вытащить
+         * из APK через обычную декомпиляцию (JADX покажет только части).
+         *
+         * Это НЕ абсолютная защита (динамический анализ всё равно может извлечь),
+         * но “просто декомпилом” токен не лежит в исходниках цельной строкой.
+         */
+        fun getTelegramBotToken(): String {
+            // base64(token) разбит на 4 части и слегка “перемешан”
+            // base64("8551732522:AAG2P0aac9GeB9A6osHXIEsTBlzvtFmwzmc") без '=='
+            val p1 = "ODU1MTczMjUyMjpB"
+            val p2 = "QUcyUDBhYWM5R2VC"
+            val p3 = "OUE2b3NIWElFc1RC"
+            val p4 = "bHp2dEZtd3ptYw"
+            val b64 = p1 + p2 + p3 + p4
+            return try {
+                String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+            } catch (_: Exception) {
+                ""
+            }
+        }
         
         // Добавляем константы для запроса разрешений
         private const val PERMISSION_REQUEST_CODE = 1001
@@ -118,12 +156,167 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
       private const val KEY_SEGMENT_DURATION_SECONDS = "segment_duration_seconds"
       private const val KEY_LAST_SENT_FILE_NAME = "last_sent_file_name"
       private const val KEY_SAVE_SEGMENTS_TO_GALLERY = "save_segments_to_gallery"
+      private const val KEY_SEND_TO_GROUP = "send_to_group"
+      private const val KEY_RESOLVED_BOT_CHAT_ID = "resolved_bot_chat_id"
+      private const val KEY_STORAGE_LIMIT_GB = "storage_limit_gb"
       private const val MIN_SEGMENT_DURATION_SECONDS = 10
       private const val MAX_SEGMENT_DURATION_SECONDS = 300
+      private const val MIN_STORAGE_LIMIT_GB = 1
+      private const val MAX_STORAGE_LIMIT_GB = 50
+      private const val DEFAULT_STORAGE_LIMIT_GB = 5
+      
+      // Action для broadcast от плиток
+      const val ACTION_TILE_TOGGLE = "com.example.sostaxi.TILE_TOGGLE"
     }
+    
+    // BroadcastReceiver для обработки плиток когда приложение уже в PiP режиме
+    private val tileToggleReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_TILE_TOGGLE) {
+                val action = intent.getStringExtra("tile_action") ?: return
+                val value = intent.getBooleanExtra("tile_value", false)
+                Log.d("MainActivity", "Получен broadcast от плитки: action=$action, value=$value")
+                handleTileToggle(action, value)
+            }
+        }
+    }
+    
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var liveLocationMessageId: Int? = null
+    // Live-location для контактов через TDLib: contactUserId -> (chatId, messageId)
+    private val contactLiveLocationState = mutableMapOf<Long, Pair<Long, Long>>()
     private var autoStopJob: Job? = null
+    @Volatile private var resolvedBotChatIdCache: String? = null
+
+    private fun agentDebugLog(
+        runId: String,
+        hypothesisId: String,
+        location: String,
+        message: String,
+        data: Map<String, Any?>
+    ) {
+        try {
+            val obj = JSONObject()
+            obj.put("sessionId", "debug-session")
+            obj.put("runId", runId)
+            obj.put("hypothesisId", hypothesisId)
+            obj.put("location", location)
+            obj.put("message", message)
+            obj.put("timestamp", System.currentTimeMillis())
+            obj.put("data", JSONObject(data))
+            FileOutputStream("/Users/vlad/AndroidStudioProjects/SOSTaxi/.cursor/debug.log", true).use { fos ->
+                fos.write((obj.toString() + "\n").toByteArray(Charsets.UTF_8))
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun candidateBotChatIds(): List<String> {
+        val base = TELEGRAM_CHAT_ID.trim()
+        val candidates = mutableListOf<String>()
+        if (base.isNotEmpty()) candidates.add(base)
+        // Часто для супергрупп/каналов нужен -100 + id
+        if (base.startsWith("-") && !base.startsWith("-100")) {
+            val digits = base.removePrefix("-")
+            if (digits.all { it.isDigit() }) {
+                candidates.add("-100$digits")
+            }
+        }
+        return candidates.distinct()
+    }
+
+    private suspend fun getResolvedBotChatId(token: String): String {
+        val validCandidates = candidateBotChatIds()
+        
+        // Проверяем кэш в памяти
+        resolvedBotChatIdCache?.let { cached ->
+            if (cached in validCandidates) return cached
+            // Кэш устарел (константа изменилась) - сбрасываем
+            resolvedBotChatIdCache = null
+        }
+        
+        val prefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+        prefs.getString(KEY_RESOLVED_BOT_CHAT_ID, null)?.let { cached ->
+            if (cached in validCandidates) {
+                resolvedBotChatIdCache = cached
+                return cached
+            }
+            // Кэш в SharedPreferences устарел - очищаем
+            prefs.edit().remove(KEY_RESOLVED_BOT_CHAT_ID).apply()
+        }
+
+        val client = OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        // #region agent log
+        agentDebugLog(
+            runId = "run1",
+            hypothesisId = "A",
+            location = "MainActivity.kt:getResolvedBotChatId",
+            message = "Resolving bot chat_id candidates",
+            data = mapOf("candidates" to candidateBotChatIds(), "cache" to (resolvedBotChatIdCache != null))
+        )
+        // #endregion
+
+        for (candidate in candidateBotChatIds()) {
+            try {
+                val url = "https://api.telegram.org/bot${token}/getChat?chat_id=$candidate"
+                val resp = client.newCall(Request.Builder().url(url).get().build()).execute()
+                val body = resp.body?.string().orEmpty()
+                resp.close()
+                val json = JSONObject(body)
+                if (json.optBoolean("ok", false)) {
+                    prefs.edit().putString(KEY_RESOLVED_BOT_CHAT_ID, candidate).apply()
+                    resolvedBotChatIdCache = candidate
+                    Log.d("MainActivity", "Resolved bot chat_id = $candidate")
+                    // #region agent log
+                    agentDebugLog(
+                        runId = "run1",
+                        hypothesisId = "A",
+                        location = "MainActivity.kt:getResolvedBotChatId",
+                        message = "getChat ok=true (resolved)",
+                        data = mapOf("candidate" to candidate)
+                    )
+                    // #endregion
+                    return candidate
+                } else {
+                    Log.w("MainActivity", "getChat failed for $candidate: ${json.optString("description")}")
+                    // #region agent log
+                    agentDebugLog(
+                        runId = "run1",
+                        hypothesisId = "A",
+                        location = "MainActivity.kt:getResolvedBotChatId",
+                        message = "getChat ok=false",
+                        data = mapOf(
+                            "candidate" to candidate,
+                            "description" to json.optString("description"),
+                            "error_code" to json.optInt("error_code", -1)
+                        )
+                    )
+                    // #endregion
+                }
+            } catch (e: Exception) {
+                Log.w("MainActivity", "getChat exception for $candidate: ${e.message}")
+                // #region agent log
+                agentDebugLog(
+                    runId = "run1",
+                    hypothesisId = "A",
+                    location = "MainActivity.kt:getResolvedBotChatId",
+                    message = "getChat exception",
+                    data = mapOf("candidate" to candidate, "error" to (e.message ?: ""))
+                )
+                // #endregion
+            }
+        }
+
+        // Фоллбек: что есть
+        val fallback = TELEGRAM_CHAT_ID
+        prefs.edit().putString(KEY_RESOLVED_BOT_CHAT_ID, fallback).apply()
+        resolvedBotChatIdCache = fallback
+        return fallback
+    }
 
     // Добавим свойство для телеграм-авторизации в класс MainActivity
     private val telegramAuthHelper: TelegramAuthHelper by lazy {
@@ -284,6 +477,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             } else {
                 stop()
             }
+        }
+        
+        // Регистрируем BroadcastReceiver для плиток (чтобы не выходить из PiP)
+        val filter = IntentFilter(ACTION_TILE_TOGGLE)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(tileToggleReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(tileToggleReceiver, filter)
         }
     }
 
@@ -486,57 +687,18 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         dialogLayout.addView(divider, dividerParams)
         */
 
-        // Добавляем заголовок "Telegram канал"
-        val channelLabel = TextView(this)
-        channelLabel.text = getString(R.string.telegram_channel)
-        channelLabel.textSize = 16f
-        channelLabel.setPadding(0, 0, 0, 10)
-        dialogLayout.addView(channelLabel)
-        
-        // Создаем элемент для отображения текущего канала
-        val channelInfoContainer = LinearLayout(this)
-        channelInfoContainer.orientation = LinearLayout.HORIZONTAL
-        channelInfoContainer.layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-        
-        // Текущий канал (или сообщение, если канал не выбран)
-        val currentChannelText = TextView(this)
-        currentChannelText.layoutParams = LinearLayout.LayoutParams(
-            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f
-        )
-        
-        // Определяем текущий канал
-        val currentChannelName = if (rtmpUrl.isEmpty() || rtmpStreamKey.isEmpty()) {
-            getString(R.string.channel_not_selected)
-        } else {
-            // Пытаемся найти имя канала по сохраненным url и key
-            val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
-            sharedPrefs.getString("channel_name", getString(R.string.unknown_channel))
+        // Отправка в группу (фиксированная группа, без выбора)
+        val taxiPrefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+        val sendToGroupCheckBox = CheckBox(this)
+        sendToGroupCheckBox.text = getString(R.string.send_to_group)
+        sendToGroupCheckBox.textSize = 14f
+        sendToGroupCheckBox.setPadding(0, 0, 0, 0)
+        sendToGroupCheckBox.isChecked = taxiPrefs.getBoolean(KEY_SEND_TO_GROUP, true)
+        // Сохраняем сразу при переключении, чтобы не зависеть от кнопки "Готово"
+        sendToGroupCheckBox.setOnCheckedChangeListener { _, isChecked ->
+            try { taxiPrefs.edit().putBoolean(KEY_SEND_TO_GROUP, isChecked).apply() } catch (_: Exception) {}
         }
-        
-        currentChannelText.text = currentChannelName
-        currentChannelText.textSize = 14f
-        
-        // Значок выбора (только текст "Изменить" без стрелки)
-        val selectIcon = TextView(this)
-        selectIcon.text = getString(R.string.change)
-        selectIcon.textSize = 14f
-        
-        // Добавляем элементы в контейнер
-        channelInfoContainer.addView(currentChannelText)
-        channelInfoContainer.addView(selectIcon)
-        
-        // Делаем весь контейнер кликабельным
-        channelInfoContainer.isClickable = true
-        channelInfoContainer.isFocusable = true
-        
-        // Добавляем фон с эффектом при нажатии
-        val outValue = android.util.TypedValue()
-        theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
-        channelInfoContainer.setBackgroundResource(outValue.resourceId)
-        
-        dialogLayout.addView(channelInfoContainer)
+        dialogLayout.addView(sendToGroupCheckBox)
         
         // Добавляем разделитель
         val divider2 = View(this)
@@ -673,12 +835,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val telegramUserPrefs = getSharedPreferences("telegram_auth_prefs", Context.MODE_PRIVATE)
         
         val firstName = sharedPrefs.getString("first_name", "") ?: ""
-        val lastName = sharedPrefs.getString("last_name", "") ?: ""
         val registrationNumber = sharedPrefs.getString("registration_number", "") ?: ""
         val taxiNumber = sharedPrefs.getString("taxi_number", "") ?: ""
         val carBrand = sharedPrefs.getString("car_brand", "") ?: ""
         val carColor = sharedPrefs.getString("car_color", "") ?: ""
-        val telegramPhone = sharedPrefs.getString("telegram_phone", null)
         
         // Поле для ввода имени
         val firstNameLabel = TextView(this)
@@ -690,18 +850,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         firstNameInput.setText(firstName)
         firstNameInput.hint = getString(R.string.enter_first_name_hint)
         dialogLayout.addView(firstNameInput)
-        
-        // Поле для ввода фамилии
-        val lastNameLabel = TextView(this)
-        lastNameLabel.text = getString(R.string.last_name) + ":"
-        lastNameLabel.textSize = 14f
-        lastNameLabel.setPadding(0, 10, 0, 0)
-        dialogLayout.addView(lastNameLabel)
-        
-        val lastNameInput = EditText(this)
-        lastNameInput.setText(lastName)
-        lastNameInput.hint = getString(R.string.enter_last_name_hint)
-        dialogLayout.addView(lastNameInput)
         
         // Поле для ввода регистрационного номера
         val registrationLabel = TextView(this)
@@ -751,25 +899,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         carColorInput.hint = getString(R.string.enter_car_color_hint)
         dialogLayout.addView(carColorInput)
         
-        // Неизменяемое поле телефона из Telegram
-        if (telegramPhone != null) {
-            val phoneLabel = TextView(this)
-            phoneLabel.text = getString(R.string.phone_from_telegram) + ":"
-            phoneLabel.textSize = 14f
-            phoneLabel.setPadding(0, 10, 0, 0)
-            dialogLayout.addView(phoneLabel)
-            
-            val phoneDisplay = TextView(this)
-            // Добавляем знак "+" если его нет
-            val formattedPhone = if (telegramPhone.startsWith("+")) telegramPhone else "+$telegramPhone"
-            phoneDisplay.text = formattedPhone
-            phoneDisplay.textSize = 14f
-            phoneDisplay.setBackgroundColor(0x10000000) // Легкий серый фон
-            phoneDisplay.setPadding(20, 15, 20, 15)
-            phoneDisplay.setTextColor(android.graphics.Color.GRAY) // Серый цвет текста
-            dialogLayout.addView(phoneDisplay)
-        }
-
         // Разделитель перед настройкой длительности сегмента
         val dividerDuration = View(this)
         dividerDuration.setBackgroundColor(0x20000000)
@@ -819,7 +948,51 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         saveToGalleryCheckBox.setPadding(0, 20, 0, 0)
         saveToGalleryCheckBox.isChecked = sharedPrefs.getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
         dialogLayout.addView(saveToGalleryCheckBox)
-        
+
+        // Значение лимита
+        val storageLimitValue = TextView(this)
+        storageLimitValue.textSize = 14f
+        storageLimitValue.setPadding(60, 10, 0, 0)
+        val savedLimitGb = sharedPrefs.getInt(KEY_STORAGE_LIMIT_GB, DEFAULT_STORAGE_LIMIT_GB)
+            .coerceIn(MIN_STORAGE_LIMIT_GB, MAX_STORAGE_LIMIT_GB)
+        storageLimitValue.text = getString(R.string.storage_limit_value_format, savedLimitGb)
+        // Ползунок/значение показываем только если включено сохранение в галерею
+        storageLimitValue.visibility = if (saveToGalleryCheckBox.isChecked) View.VISIBLE else View.GONE
+        dialogLayout.addView(storageLimitValue)
+
+        // Ползунок для лимита памяти
+        val storageLimitSeekBar = SeekBar(this)
+        storageLimitSeekBar.max = MAX_STORAGE_LIMIT_GB - MIN_STORAGE_LIMIT_GB
+        storageLimitSeekBar.progress = savedLimitGb - MIN_STORAGE_LIMIT_GB
+        storageLimitSeekBar.setPadding(60, 0, 20, 0)
+        storageLimitSeekBar.visibility = if (saveToGalleryCheckBox.isChecked) View.VISIBLE else View.GONE
+        dialogLayout.addView(storageLimitSeekBar)
+
+        storageLimitSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val gb = progress + MIN_STORAGE_LIMIT_GB
+                storageLimitValue.text = getString(R.string.storage_limit_value_format, gb)
+                // Сохраняем значение сразу, даже если галочка сохранения в галерею выключена позже
+                try {
+                    sharedPrefs.edit().putInt(KEY_STORAGE_LIMIT_GB, gb).apply()
+                } catch (_: Exception) {}
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        // Функция для обновления видимости ползунка лимита (показываем только если включено сохранение в галерею)
+        fun updateStorageLimitVisibility() {
+            val show = saveToGalleryCheckBox.isChecked
+            storageLimitValue.visibility = if (show) View.VISIBLE else View.GONE
+            storageLimitSeekBar.visibility = if (show) View.VISIBLE else View.GONE
+        }
+
+        // Обработчик для чекбокса сохранения в галерею
+        saveToGalleryCheckBox.setOnCheckedChangeListener { _, _ ->
+            updateStorageLimitVisibility()
+        }
+
         // Разделитель перед настройками Bluetooth-кнопки
         val dividerBluetooth = View(this)
         dividerBluetooth.setBackgroundColor(0x20000000)
@@ -945,32 +1118,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
         dialogLayout.addView(selectBleButton)
         dialogLayout.addView(selectedDeviceText)
-        
-        // Spinner для выбора действия
-        val bluetoothActionLabel = TextView(this)
-        bluetoothActionLabel.text = getString(R.string.bluetooth_button_action) + ":"
-        bluetoothActionLabel.textSize = 14f
-        bluetoothActionLabel.setPadding(0, 20, 0, 10)
-        dialogLayout.addView(bluetoothActionLabel)
-        
-        val bluetoothActionSpinner = Spinner(this)
-        val bluetoothActionAdapter = ArrayAdapter.createFromResource(
-            this,
-            R.array.work_modes,
-            android.R.layout.simple_spinner_item
-        )
-        bluetoothActionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        bluetoothActionSpinner.adapter = bluetoothActionAdapter
-        
-        // Загружаем сохраненное действие
-        val savedAction = sharedPrefs.getString("bluetooth_button_action", "VIDEO_SEGMENTS") ?: "VIDEO_SEGMENTS"
-        bluetoothActionSpinner.setSelection(if (savedAction == "VIDEO_SEGMENTS") 0 else 1)
-        
-        // Spinner всегда активен
-        bluetoothActionSpinner.isEnabled = true
-        bluetoothActionLabel.isEnabled = true
-        
-        dialogLayout.addView(bluetoothActionSpinner)
+
+        // Выбор действия Bluetooth-кнопки скрыт: всегда VIDEO_SEGMENTS
         
         // Информация о службе специальных возможностей
         accessibilityInfoText = TextView(this)
@@ -1017,7 +1166,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 
                 // Сохраняем информацию о пользователе
                 userName = firstNameInput.text.toString().trim()
-                userLastName = lastNameInput.text.toString().trim()
                 userCar = carBrandInput.text.toString().trim()
                 userCarColor = carColorInput.text.toString().trim()
                 
@@ -1027,15 +1175,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 // Сохраняем настройки Bluetooth-кнопки
                 val bluetoothButtonWasEnabled = sharedPrefs.getBoolean("bluetooth_button_enabled", true)
                 val bluetoothButtonEnabled = true
-                val bluetoothButtonAction = when (bluetoothActionSpinner.selectedItemPosition) {
-                    0 -> "VIDEO_SEGMENTS"
-                    1 -> "RTMP_STREAMING"
-                    else -> "VIDEO_SEGMENTS"
-                }
+                val bluetoothButtonAction = "VIDEO_SEGMENTS"
                 
                 sharedPrefs.edit()
                     .putString("first_name", firstNameInput.text.toString().trim())
-                    .putString("last_name", lastNameInput.text.toString().trim())
                     .putString("registration_number", registrationInput.text.toString().trim())
                     .putString("taxi_number", taxiNumberInput.text.toString().trim())
                     .putString("car_brand", carBrandInput.text.toString().trim())
@@ -1048,6 +1191,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     )
                     // Сохраняем настройку сохранения сегментов в галерею
                     .putBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, saveToGalleryCheckBox.isChecked)
+                    // Сохраняем настройку отправки в группу
+                    .putBoolean(KEY_SEND_TO_GROUP, sendToGroupCheckBox.isChecked)
+                    // Сохраняем настройки лимита памяти
+                    .putInt(KEY_STORAGE_LIMIT_GB, storageLimitSeekBar.progress + MIN_STORAGE_LIMIT_GB)
                     // Сохраняем настройки Bluetooth-кнопки
                     .putBoolean("bluetooth_button_enabled", true)
                     .putString("bluetooth_button_action", bluetoothButtonAction)
@@ -1152,11 +1299,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }, 50)
         }
         
-        // Настраиваем действие для элемента выбора канала
-        channelInfoContainer.setOnClickListener {
-            localDialog.dismiss()
-            showRtmpSettingsDialog(true) // Передаем флаг, указывающий, что нужно вернуться в основное меню
-        }
+        // Нет выбора канала: группа фиксированная
         
         // Сохраняем созданный диалог в class member для возможности обновления статуса
         this.dialog = localDialog
@@ -1168,34 +1311,154 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun start() {
         if (isActive) return
         
-        Log.d("MainActivity", "Начинаем запуск с режимом $currentWorkMode")
-        
-        // Сбрасываем флаг финализации последнего сегмента при новом старте
-        isFinalizingLastSegment = false
-        
         // Проверяем разрешения перед началом
         if (!checkPermissions()) {
             Log.d("MainActivity", "Разрешения не получены, запрашиваем")
             requestPermissions()
             return
         }
-        
+
+        // Доступ по Tribute: если пользователь НЕ состоит в группе/канале, то приложение НЕ запускает никакой функционал
+        // (ни запись, ни сегменты, ни сохранение, ни отправку куда-либо).
+        val token = getTelegramBotToken()
+        // #region agent log
+        agentDebugLog(
+            runId = "run1",
+            hypothesisId = "B",
+            location = "MainActivity.kt:start",
+            message = "Start pressed: begin access check",
+            data = mapOf(
+                "tokenBlank" to token.isBlank(),
+                "workMode" to currentWorkMode.name,
+                "sendToGroupPref" to getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE).getBoolean(KEY_SEND_TO_GROUP, true)
+            )
+        )
+        // #endregion
+        if (token.isBlank()) {
+            Toast.makeText(this, "Ошибка токена бота (проверка подписки недоступна)", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // Чтобы проверить подписку, нужен user_id (Tribute даёт доступ через членство в чате)
+        val userId = telegramAuthHelper.getCurrentUserId()
+        // #region agent log
+        agentDebugLog(
+            runId = "run1",
+            hypothesisId = "C",
+            location = "MainActivity.kt:start",
+            message = "Have userId for getChatMember?",
+            data = mapOf("userIdZero" to (userId == 0L))
+        )
+        // #endregion
+        if (userId == 0L) {
+            Toast.makeText(this, getString(R.string.tribute_auth_required), Toast.LENGTH_LONG).show()
+            try { startTelegramAuth() } catch (_: Exception) {}
+            return
+        }
+
+        // Проверяем членство через Bot API getChatMember (для TELEGRAM_CHAT_ID это корректный chat_id)
+        ioScope.launch {
+            val hasAccess = try {
+                val chatId = getResolvedBotChatId(token)
+                val url = "https://api.telegram.org/bot${token}/getChatMember" +
+                    "?chat_id=${chatId}&user_id=${userId}"
+                val resp = OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute()
+                val body = resp.body?.string().orEmpty()
+                resp.close()
+                val json = JSONObject(body)
+                if (!json.optBoolean("ok", false)) {
+                    Log.w("MainActivity", "getChatMember ok=false: ${json.optString("description")}")
+                    // #region agent log
+                    agentDebugLog(
+                        runId = "run1",
+                        hypothesisId = "D",
+                        location = "MainActivity.kt:start",
+                        message = "getChatMember ok=false",
+                        data = mapOf(
+                            "chatId" to chatId,
+                            "description" to json.optString("description"),
+                            "error_code" to json.optInt("error_code", -1)
+                        )
+                    )
+                    // #endregion
+                    false
+                } else {
+                    val status = json.optJSONObject("result")?.optString("status", "") ?: ""
+                    // #region agent log
+                    agentDebugLog(
+                        runId = "run1",
+                        hypothesisId = "D",
+                        location = "MainActivity.kt:start",
+                        message = "getChatMember ok=true",
+                        data = mapOf("chatId" to chatId, "status" to status)
+                    )
+                    // #endregion
+                    // left / kicked => нет доступа. остальное (member/restricted/admin/creator) => доступ есть
+                    status != "left" && status != "kicked" && status.isNotBlank()
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка проверки подписки (getChatMember): ${e.message}")
+                // #region agent log
+                agentDebugLog(
+                    runId = "run1",
+                    hypothesisId = "E",
+                    location = "MainActivity.kt:start",
+                    message = "getChatMember exception",
+                    data = mapOf("error" to (e.message ?: ""))
+                )
+                // #endregion
+                false
+            }
+
+            withContext(Dispatchers.Main) {
+                // #region agent log
+                agentDebugLog(
+                    runId = "run1",
+                    hypothesisId = "D",
+                    location = "MainActivity.kt:start",
+                    message = "Access decision",
+                    data = mapOf("hasAccess" to hasAccess)
+                )
+                // #endregion
+                if (!hasAccess) {
+                    Toast.makeText(this@MainActivity, getString(R.string.tribute_subscription_required), Toast.LENGTH_LONG).show()
+                } else {
+                    startAfterAccessCheck()
+                }
+            }
+        }
+        return
+
+        startAfterAccessCheck()
+    }
+
+    private fun startAfterAccessCheck() {
+        Log.d("MainActivity", "Начинаем запуск с режимом $currentWorkMode")
+
+        // Сбрасываем флаг финализации последнего сегмента при новом старте
+        isFinalizingLastSegment = false
+
         Log.d("MainActivity", "Разрешения получены, продолжаем запуск")
-        
+
         isActive = true
-        
+
         // Запускаем в корутине для последовательной отправки сообщений
         ioScope.launch {
-            // Сначала отправляем информационное сообщение
-            sendUserInfoMessage()
+            // Отправляем инфо-сообщение и запускаем геолокацию только если активны соответствующие плитки
+            // Если активна только галерея - ничего не отправляем
+            val shouldSendToGroup = isTileSendToGroupActive
+            val shouldSendToContacts = isTileSendToContactsActive && selectedContacts.isNotEmpty()
             
-            // Затем запускаем геолокацию
-            startLiveLocation()
+            if (shouldSendToGroup || shouldSendToContacts) {
+                // Инфо-сообщение отправляется только туда, где активны плитки
+                sendUserInfoMessage()
+                // Геолокация тоже
+                startLiveLocation()
+            } else {
+                Log.d("MainActivity", "Пропускаем инфо-сообщение и геолокацию - активна только галерея")
+            }
         }
-        
-        // Всегда запускаем запись видео сегментов для отправки контактам
 
-        
         // Дополнительно запускаем стриминг, если выбран режим RTMP
         Log.d("MainActivity", "Используем $currentWorkMode")
         when (currentWorkMode) {
@@ -1208,10 +1471,10 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 startRecord()
             }
         }
-        
+
         startStopButton.text = "Стоп"
         enterPictureInPictureMode()
-        
+
         // Обновляем состояние плиток при запуске (только для API 24+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             when (currentWorkMode) {
@@ -1226,14 +1489,14 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             }
         }
 
-        // Планируем авто-остановку через 1 минуту, если пользователь не остановит вручную
+        // Планируем авто-остановку через 1 час, если пользователь не остановит вручную
         try {
             autoStopJob?.cancel()
         } catch (_: Exception) {}
         autoStopJob = CoroutineScope(Dispatchers.Main).launch {
-            delay(60_000)
+            delay(3_600_000) // 1 час = 60 минут * 60 секунд * 1000 мс
             if (isActive) {
-                Log.d("MainActivity", "Авто-остановка сессии по таймеру 1 минута (эмулируем повторное нажатие на плитку)")
+                Log.d("MainActivity", "Авто-остановка сессии по таймеру 1 час (эмулируем повторное нажатие на плитку)")
                 val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     putExtra("quick_tile_action", "stop_and_close")
@@ -1245,9 +1508,27 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
 
     private fun stop() {
         if (!isActive) return
-        
+
         Log.d("MainActivity", "Начинаем остановку")
         isActive = false
+
+        // Финализируем и отправляем последний сегмент видео перед остановкой
+        if (currentWorkMode == WorkMode.VIDEO_SEGMENTS && !isFinalizingLastSegment) {
+            Log.d("MainActivity", "Финализация последнего сегмента перед остановкой")
+            try {
+                // НЕ блокируем UI поток: TDLib-колбэки приходят через main looper,
+                // а блокировка приводит к зависанию/ANR и “последний сегмент не дошёл контактам”.
+                backgroundSendScope.launch {
+                    try {
+                        finalizeAndSendLastSegment()
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "finalizeAndSendLastSegment ошибка: ${e.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка финализации последнего сегмента: ${e.message}")
+            }
+        }
 
         // Останавливаем геолокацию
         try {
@@ -1255,7 +1536,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         } catch (e: Exception) {
             Log.e("MainActivity", "Ошибка остановки геолокации: ${e.message}")
         }
-        
+
         // Останавливаем камеры
         try {
             streamingCamera?.stopStream()
@@ -1279,10 +1560,19 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             try {
                 StreamingTileService.setTileState(this, false)
                 VideoSegmentsTileService.setTileState(this, false)
+                // Сбрасываем новые плитки
+                SendToGroupTileService.setTileState(this, false)
+                SendToContactsTileService.setTileState(this, false)
+                SaveToGalleryTileService.setTileState(this, false)
             } catch (e: Exception) {
                 Log.e("MainActivity", "Ошибка сброса состояния плиток: ${e.message}")
             }
         }
+        
+        // Сбрасываем флаги активности плиток
+        isTileSendToGroupActive = false
+        isTileSendToContactsActive = false
+        isTileSaveToGalleryActive = false
         
         Log.d("MainActivity", "Остановка завершена")
         
@@ -1342,6 +1632,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         ioScope.launch {
             try {
                 var segmentCount = 0
+                // Счётчики сегментов сбрасываются при активации соответствующей плитки в handleTileToggle
                 // Инициализируем камеру один раз в начале сессии
                 Log.d("MainActivity", "Глобальная инициализация камеры для записи сегментов")
                 recordingCamera?.prepareAudio(192 * 1024, 44_100, true)
@@ -1359,7 +1650,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     try {
                         segmentCount++
                         val ts = SimpleDateFormat("yyyyMMdd_HH-mm-ss", Locale.US).format(System.currentTimeMillis())
-                      val file = File(getExternalFilesDir(null), "taxi_sos_${ts}_segment${segmentCount}.mp4")
+                      val file = File(getExternalFilesDir(null), "taxi_helper_${ts}_segment${segmentCount}.mp4")
                         
                         Log.d("MainActivity", "Начинаем запись сегмента $segmentCount: ${file.name}")
                         
@@ -1424,15 +1715,9 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                                 // Сканируем файл и отправляем
                                 MediaScannerConnection.scanFile(this@MainActivity, arrayOf(file.absolutePath), null, null)
                                 
-                                // Копируем в галерею, если настройка включена
-                                val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
-                                    .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
-                                if (shouldSaveToGallery) {
-                                    copyVideoToGallery(file)
-                                }
-                                
+                                // Отправляем/сохраняем видео (логика определяется активными плитками)
                                 sendVideo(file)
-                                Log.d("MainActivity", "Сегмент $segmentCount отправлен")
+                                Log.d("MainActivity", "Сегмент $segmentCount обработан")
                             }
                         } else {
                             Log.w("MainActivity", "Файл сегмента $segmentCount не создался или слишком мал: ${file.length()} байт")
@@ -1481,6 +1766,8 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
       // Устанавливаем флаг финализации, чтобы избежать двойной отправки
       isFinalizingLastSegment = true
       
+      Log.d("MainActivity", "finalizeAndSendLastSegment: начинаем финализацию, currentSegmentFile=${currentSegmentFile?.name}, isSegmentRecordingActive=$isSegmentRecordingActive")
+      
       var lastFile = currentSegmentFile
       // Если ничего не записывается, нечего завершать
       if (lastFile == null && !isSegmentRecordingActive) {
@@ -1489,6 +1776,7 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
           Log.d("MainActivity", "Резервный поиск файла сегмента: ${lastFile?.name}")
       }
       if (lastFile == null) {
+          Log.d("MainActivity", "finalizeAndSendLastSegment: нет файла для финализации")
           isFinalizingLastSegment = false
           return
       }
@@ -1496,45 +1784,79 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
       try {
           // Останавливаем запись, если еще идет
           if (isSegmentRecordingActive) {
+              Log.d("MainActivity", "finalizeAndSendLastSegment: останавливаем активную запись")
               try {
                   recordingCamera?.stopRecord()
-              } catch (_: Exception) {}
+              } catch (e: Exception) {
+                  Log.e("MainActivity", "Ошибка остановки записи: ${e.message}")
+              }
               isSegmentRecordingActive = false
           }
 
-          // Дождаться финализации файла: до 3 секунд, проверяя каждые 200 мс
+          // Ждём стабилизации размера файла (когда moov атом записан)
+          // Увеличиваем таймаут до 5 секунд и проверяем стабильность размера файла
           var finalizedFile: File? = lastFile
-          val deadline = System.currentTimeMillis() + 3000
+          val deadline = System.currentTimeMillis() + 5000
+          var lastSize = 0L
+          var stableSizeCount = 0
+          
+          Log.d("MainActivity", "finalizeAndSendLastSegment: ожидаем финализации файла ${lastFile.name}")
+          
           while (System.currentTimeMillis() < deadline) {
               val candidate = tryFindLatestSegmentFile() ?: finalizedFile
-              if (candidate != null && candidate.exists() && candidate.length() > 0) {
-                  finalizedFile = candidate
-                  // Небольшая доп. задержка для записи moov/mdat
-                  kotlinx.coroutines.delay(200)
-                  break
+              if (candidate != null && candidate.exists()) {
+                  val currentSize = candidate.length()
+                  Log.d("MainActivity", "finalizeAndSendLastSegment: проверка файла ${candidate.name}, размер=$currentSize")
+                  
+                  if (currentSize > 1000) { // Минимальный размер для валидного видео
+                      // Проверяем, что размер файла стабилизировался (не меняется 3 проверки подряд)
+                      if (currentSize == lastSize) {
+                          stableSizeCount++
+                          if (stableSizeCount >= 3) {
+                              finalizedFile = candidate
+                              Log.d("MainActivity", "finalizeAndSendLastSegment: файл стабилизирован, размер=$currentSize")
+                              break
+                          }
+                      } else {
+                          stableSizeCount = 0
+                          lastSize = currentSize
+                      }
+                      finalizedFile = candidate
+                  }
               }
               kotlinx.coroutines.delay(200)
           }
+          
+          // Дополнительная задержка для гарантии записи moov атома
+          kotlinx.coroutines.delay(500)
 
           val fileToSend = finalizedFile
-          if (fileToSend != null && fileToSend.exists() && fileToSend.length() > 0) {
+          if (fileToSend != null && fileToSend.exists() && fileToSend.length() > 1000) {
+              // Проверяем, не был ли этот файл уже отправлен
+              val prefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+              val lastSentFileName = prefs.getString(KEY_LAST_SENT_FILE_NAME, null)
+              
+              if (fileToSend.name == lastSentFileName) {
+                  Log.d("MainActivity", "finalizeAndSendLastSegment: файл ${fileToSend.name} уже был отправлен, пропускаем")
+                  return
+              }
+              
+              // Сохраняем имя отправляемого файла
+              prefs.edit().putString(KEY_LAST_SENT_FILE_NAME, fileToSend.name).apply()
+              
               // Сканируем файл
               MediaScannerConnection.scanFile(this, arrayOf(fileToSend.absolutePath), null, null)
-              
-              // Копируем в галерею, если настройка включена
-              val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
-                  .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
-              if (shouldSaveToGallery) {
-                  copyVideoToGallery(fileToSend)
-              }
 
-              // Отправляем синхронно (блокирующе), чтобы гарантировать отправку до закрытия
-              Log.d("MainActivity", "Отправка финального сегмента: ${fileToSend.name}, размер=${fileToSend.length()} байт")
+              // Отправляем/сохраняем синхронно (логика определяется активными плитками)
+              Log.d("MainActivity", "Обработка финального сегмента: ${fileToSend.name}, размер=${fileToSend.length()} байт")
               sendVideoNow(fileToSend)
-              Log.d("MainActivity", "Финальный сегмент отправлен: ${fileToSend.name}")
+              Log.d("MainActivity", "Финальный сегмент обработан: ${fileToSend.name}")
+          } else {
+              Log.w("MainActivity", "finalizeAndSendLastSegment: файл не готов или слишком мал: ${fileToSend?.name}, size=${fileToSend?.length()}")
           }
       } finally {
           currentSegmentFile = null
+          isFinalizingLastSegment = false
       }
   }
 
@@ -1542,23 +1864,57 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
       return try {
           val dir = getExternalFilesDir(null) ?: return null
           val files = dir.listFiles { f ->
-              f.isFile && f.name.startsWith("taxi_sos_") && f.name.contains("_segment") && f.name.endsWith(".mp4")
+              f.isFile && f.name.startsWith("taxi_helper_") && f.name.contains("_segment") && f.name.endsWith(".mp4")
           } ?: return null
           files.maxByOrNull { it.lastModified() }
       } catch (_: Exception) { null }
   }
 
   private suspend fun sendVideoNow(videoFile: File) {
-      // Отправка в канал (режим VIDEO_SEGMENTS)
+      Log.d("MainActivity", "Обработка финального сегмента: ${videoFile.name}")
+      Log.d("MainActivity", "Активные плитки: group=$isTileSendToGroupActive, contacts=$isTileSendToContactsActive, gallery=$isTileSaveToGalleryActive")
+      
+      // 1) Сохраняем в галерею (если плитка активна)
+      val shouldSaveToGallery = isTileSaveToGalleryActive
+      if (shouldSaveToGallery) {
+          try {
+              Log.d("MainActivity", "Сохраняем финальный сегмент в галерею")
+              copyVideoToGallery(videoFile)
+          } catch (e: Exception) {
+              Log.e("MainActivity", "Ошибка сохранения в галерею: ${e.message}")
+          }
+      }
+      
+      // 2) Отправка в группу (если плитка активна)
       try {
-          if (currentWorkMode == WorkMode.VIDEO_SEGMENTS) {
+          if (isTileSendToGroupActive && currentWorkMode == WorkMode.VIDEO_SEGMENTS) {
+              // Увеличиваем счётчик для группы
+              sentSegmentCountGroup++
+              val groupSegmentNum = sentSegmentCountGroup
+              
               withContext(Dispatchers.IO) {
+                  val token = getTelegramBotToken()
+                  if (token.isBlank()) return@withContext
+
+                  val chatId = getResolvedBotChatId(token)
+                  
+                  // Если это сегмент 3+ для группы, удаляем предыдущий (промежуточный)
+                  if (groupSegmentNum >= 3) {
+                      val previousSegmentNumber = groupSegmentNum - 1
+                      val previousMessageId = botGroupMessageIds[previousSegmentNumber]
+                      if (previousMessageId != null) {
+                          Log.d("MainActivity", "Удаляем промежуточный сегмент группы #$previousSegmentNumber (messageId=$previousMessageId)")
+                          deleteMessageFromBotChat(token, chatId, previousMessageId)
+                          botGroupMessageIds.remove(previousSegmentNumber)
+                      }
+                  }
+
                   val videoRequestBody = videoFile.asRequestBody("video/mp4".toMediaTypeOrNull())
                   val multipartBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-                      .addFormDataPart("chat_id", TELEGRAM_CHAT_ID)
+                      .addFormDataPart("chat_id", chatId)
                       .addFormDataPart("video", videoFile.name, videoRequestBody)
                       .build()
-                  val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo"
+                  val url = "https://api.telegram.org/bot${token}/sendVideo"
                   val request = Request.Builder()
                       .url(url)
                       .post(multipartBody)
@@ -1568,18 +1924,36 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                       .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
                       .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
                       .build()
-                  client.newCall(request).execute().close()
+                  
+                  val response = client.newCall(request).execute()
+                  // Парсим message_id из ответа
+                  val responseBody = response.body?.string()
+                  response.close()
+                  if (responseBody != null) {
+                      val messageIdRegex = """"message_id":(\d+)""".toRegex()
+                      val matchResult = messageIdRegex.find(responseBody)
+                      if (matchResult != null) {
+                          val messageId = matchResult.groupValues[1].toInt()
+                          botGroupMessageIds[groupSegmentNum] = messageId
+                          Log.d("MainActivity", "Финальный сегмент группы #$groupSegmentNum отправлен, messageId=$messageId")
+                      }
+                  }
               }
           }
       } catch (e: Exception) {
           Log.e("MainActivity", "Ошибка отправки видео в канал: ${e.message}")
       }
 
-      // Отправка выбранным контактам (если есть)
+      // 3) Отправка контактам (если плитка активна)
       try {
-          if (selectedContacts.isNotEmpty() && telegramUserId != null) {
+          if (isTileSendToContactsActive && selectedContacts.isNotEmpty() && telegramAuthHelper.isAuthenticated()) {
+              // Увеличиваем счётчик для контактов
+              sentSegmentCountContacts++
+              val contactsSegmentNum = sentSegmentCountContacts
+              
+              Log.d("MainActivity", "Отправляем финальный сегмент контактов #$contactsSegmentNum (${selectedContacts.size} шт)")
               for (contact in selectedContacts) {
-                  sendVideoToContact(contact, videoFile)
+                  sendVideoToContactWithTracking(contact, videoFile, contactsSegmentNum)
               }
               // Небольшая задержка чтобы TDLib обработал файл
               kotlinx.coroutines.delay(500)
@@ -1588,67 +1962,197 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
           Log.e("MainActivity", "Ошибка отправки видео контактам: ${e.message}")
       }
 
-      // Удаляем файл после отправки (если не включено сохранение в галерею)
+      // 4) Удаляем файл после обработки (если не нужно сохранять)
       try {
-          val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
-              .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
-          
           if (!shouldSaveToGallery && videoFile.exists()) {
               videoFile.delete()
-              Log.d("MainActivity", "Файл ${videoFile.name} удален после отправки")
-          } else if (shouldSaveToGallery) {
-              Log.d("MainActivity", "Файл ${videoFile.name} сохранен в галерею")
+              Log.d("MainActivity", "Файл ${videoFile.name} удален после обработки")
           }
       } catch (_: Exception) {}
   }
 
     private fun sendVideo(videoFile: File) {
         ioScope.launch {
-            try {
-                // Отправляем видео в канал только в режиме VIDEO_SEGMENTS
-                if (currentWorkMode == WorkMode.VIDEO_SEGMENTS) {
-                    val videoRequestBody = videoFile.asRequestBody("video/mp4".toMediaTypeOrNull())
-                    val multipartBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-                        .addFormDataPart("chat_id", TELEGRAM_CHAT_ID)
-                        .addFormDataPart("video", videoFile.name, videoRequestBody)
-                        .build()
-                    val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo"
-                    val request = Request.Builder()
-                        .url(url)
-                        .post(multipartBody)
-                        .build()
-
-                    val client = OkHttpClient.Builder()
-                        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                        .build()
-                    val response = client.newCall(request).execute()
-                    response.close()
+            Log.d("MainActivity", "Обработка видео сегмента: ${videoFile.name}")
+            Log.d("MainActivity", "Активные плитки: group=$isTileSendToGroupActive, contacts=$isTileSendToContactsActive, gallery=$isTileSaveToGalleryActive")
+            
+            // 1) Сохраняем в галерею (если плитка активна)
+            val shouldSaveToGallery = isTileSaveToGalleryActive
+            if (shouldSaveToGallery) {
+                try {
+                    Log.d("MainActivity", "Сохраняем сегмент в галерею")
+                    copyVideoToGallery(videoFile)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка сохранения в галерею: ${e.message}")
                 }
-                
-                // Всегда отправляем видео контактам, если они выбраны
-                if (selectedContacts.isNotEmpty() && telegramUserId != null) {
-                    selectedContacts.forEach { contact ->
-                        sendVideoToContact(contact, videoFile)
-                    }
+            }
+
+            // 2) Отправляем в группу (если плитка активна)
+            try {
+                if (isTileSendToGroupActive && currentWorkMode == WorkMode.VIDEO_SEGMENTS) {
+                    // Увеличиваем счётчик для группы
+                    sentSegmentCountGroup++
+                    val groupSegmentNum = sentSegmentCountGroup
                     
+                    val token = getTelegramBotToken()
+                    if (token.isNotBlank()) {
+                        val chatId = getResolvedBotChatId(token)
+                        
+                        // Если это сегмент 3+ для группы, удаляем предыдущий (промежуточный)
+                        if (groupSegmentNum >= 3) {
+                            val previousSegmentNumber = groupSegmentNum - 1
+                            val previousMessageId = botGroupMessageIds[previousSegmentNumber]
+                            if (previousMessageId != null) {
+                                Log.d("MainActivity", "Удаляем промежуточный сегмент группы #$previousSegmentNumber (messageId=$previousMessageId)")
+                                deleteMessageFromBotChat(token, chatId, previousMessageId)
+                                botGroupMessageIds.remove(previousSegmentNumber)
+                            }
+                        }
+                        
+                        val videoRequestBody = videoFile.asRequestBody("video/mp4".toMediaTypeOrNull())
+                        val multipartBody = MultipartBody.Builder().setType(MultipartBody.FORM)
+                            .addFormDataPart("chat_id", chatId)
+                            .addFormDataPart("video", videoFile.name, videoRequestBody)
+                            .build()
+                        val url = "https://api.telegram.org/bot${token}/sendVideo"
+                        val request = Request.Builder()
+                            .url(url)
+                            .post(multipartBody)
+                            .build()
+
+                        val client = OkHttpClient.Builder()
+                            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                        
+                        val response = client.newCall(request).execute()
+                        // Парсим message_id из ответа
+                        val responseBody = response.body?.string()
+                        response.close()
+                        if (responseBody != null) {
+                            val messageIdRegex = """"message_id":(\d+)""".toRegex()
+                            val matchResult = messageIdRegex.find(responseBody)
+                            if (matchResult != null) {
+                                val messageId = matchResult.groupValues[1].toInt()
+                                botGroupMessageIds[groupSegmentNum] = messageId
+                                Log.d("MainActivity", "Сегмент группы #$groupSegmentNum отправлен, messageId=$messageId")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка отправки видео в канал: ${e.message}")
+            }
+
+            // 3) Отправляем контактам (если плитка активна и есть выбранные контакты)
+            try {
+                if (isTileSendToContactsActive && selectedContacts.isNotEmpty() && telegramAuthHelper.isAuthenticated()) {
+                    // Увеличиваем счётчик для контактов
+                    sentSegmentCountContacts++
+                    val contactsSegmentNum = sentSegmentCountContacts
+                    
+                    Log.d("MainActivity", "Отправляем сегмент контактов #$contactsSegmentNum (${selectedContacts.size} шт)")
+                    selectedContacts.forEach { contact ->
+                        sendVideoToContactWithTracking(contact, videoFile, contactsSegmentNum)
+                    }
                     // Ждем немного чтобы TDLib успел обработать файл
                     delay(2000)
                 }
-                
-                // Удаляем файл после отправки (если не включено сохранение в галерею)
-                val shouldSaveToGallery = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
-                    .getBoolean(KEY_SAVE_SEGMENTS_TO_GALLERY, false)
-                
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Ошибка отправки видео контактам: ${e.message}")
+            }
+
+            // 4) Удаляем файл после обработки (если не нужно сохранять)
+            try {
                 if (!shouldSaveToGallery && videoFile.exists()) {
                     videoFile.delete()
-                    Log.d("MainActivity", "Файл ${videoFile.name} удален после отправки")
-                } else if (shouldSaveToGallery) {
-                    Log.d("MainActivity", "Файл ${videoFile.name} сохранен в галерею")
+                    Log.d("MainActivity", "Файл ${videoFile.name} удален после обработки")
+                }
+            } catch (_: Exception) {}
+        }
+    }
+    
+    /**
+     * Удаляет сообщение из чата через Bot API
+     */
+    private suspend fun deleteMessageFromBotChat(token: String, chatId: String, messageId: Int) {
+        try {
+            withContext(Dispatchers.IO) {
+                val url = "https://api.telegram.org/bot${token}/deleteMessage?chat_id=$chatId&message_id=$messageId"
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .build()
+                
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                val success = response.isSuccessful
+                response.close()
+                
+                if (success) {
+                    Log.d("MainActivity", "Сообщение $messageId успешно удалено из группы")
+                } else {
+                    Log.w("MainActivity", "Не удалось удалить сообщение $messageId из группы")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка удаления сообщения из группы: ${e.message}")
+        }
+    }
+    
+    /**
+     * Отправляет видео контакту с отслеживанием messageId и удалением промежуточных сегментов
+     */
+    private suspend fun sendVideoToContactWithTracking(contact: TelegramContact, videoFile: File, segmentNumber: Int) {
+        return suspendCoroutine { continuation ->
+            try {
+                Log.d("MainActivity", "Отправка видео сегмента #$segmentNumber контакту ${contact.name}: ${videoFile.name}")
+                
+                // Создаем приватный чат с контактом
+                telegramAuthHelper.createPrivateChat(contact.id) { chatId ->
+                    if (chatId != null) {
+                        // Если это сегмент 3+, удаляем предыдущий (промежуточный)
+                        if (segmentNumber >= 3) {
+                            val previousSegmentNumber = segmentNumber - 1
+                            val contactMsgs = contactMessageIds[contact.id]
+                            val previousMsgData = contactMsgs?.get(previousSegmentNumber)
+                            if (previousMsgData != null) {
+                                val (prevChatId, prevMessageId) = previousMsgData
+                                Log.d("MainActivity", "Удаляем промежуточный сегмент #$previousSegmentNumber у контакта ${contact.name}")
+                                telegramAuthHelper.deleteMessages(prevChatId, longArrayOf(prevMessageId), true) { success ->
+                                    if (success) {
+                                        Log.d("MainActivity", "Промежуточный сегмент #$previousSegmentNumber удален у ${contact.name}")
+                                    }
+                                }
+                                contactMsgs.remove(previousSegmentNumber)
+                            }
+                        }
+                        
+                        // Отправляем видео с получением messageId
+                        telegramAuthHelper.sendVideoWithMessageId(chatId, videoFile.absolutePath) { success, messageId, error ->
+                            if (success && messageId != null) {
+                                Log.d("MainActivity", "Видео сегмент #$segmentNumber отправлен контакту ${contact.name}, messageId=$messageId")
+                                // Сохраняем messageId
+                                val contactMsgs = contactMessageIds.getOrPut(contact.id) { mutableMapOf() }
+                                contactMsgs[segmentNumber] = Pair(chatId, messageId)
+                            } else {
+                                Log.e("MainActivity", "Ошибка отправки видео контакту ${contact.name}: $error")
+                            }
+                            continuation.resume(Unit)
+                        }
+                    } else {
+                        Log.e("MainActivity", "Не удалось создать чат с контактом ${contact.name}")
+                        continuation.resume(Unit)
+                    }
                 }
             } catch (e: Exception) {
-                Log.e("MainActivity", "Network error while sending video: ${e.message}")
+                Log.e("MainActivity", "Ошибка при отправке видео контакту ${contact.name}: ${e.message}")
+                continuation.resume(Unit)
             }
         }
     }
@@ -1682,15 +2186,24 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         }
     }
     
-    // Функция для копирования видео файла в галерею
+    // Функция для копирования видео файла в галерею с проверкой лимита памяти
     private fun copyVideoToGallery(sourceFile: File) {
         try {
+            val prefs = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+            val storageLimitGb = prefs.getInt(KEY_STORAGE_LIMIT_GB, DEFAULT_STORAGE_LIMIT_GB)
+                .coerceIn(MIN_STORAGE_LIMIT_GB, MAX_STORAGE_LIMIT_GB)
+            val storageLimitBytes = storageLimitGb * 1024L * 1024L * 1024L
+            
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 // Для Android 10+ используем MediaStore API
+                
+                // Лимит всегда включен и всегда удаляем старые видео при достижении лимита
+                enforceStorageLimitMediaStore(storageLimitBytes, sourceFile.length())
+                
                 val contentValues = android.content.ContentValues().apply {
                     put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, sourceFile.name)
                     put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-                    put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_MOVIES + "/Taxi SOS")
+                    put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, android.os.Environment.DIRECTORY_MOVIES + "/Taxi Helper")
                     put(android.provider.MediaStore.Video.Media.IS_PENDING, 1)
                 }
                 
@@ -1714,10 +2227,13 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             } else {
                 // Для старых версий Android сохраняем в публичную директорию
                 val moviesDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES)
-                val taxiSosDir = File(moviesDir, "Taxi SOS")
+                val taxiSosDir = File(moviesDir, "Taxi Helper")
                 if (!taxiSosDir.exists()) {
                     taxiSosDir.mkdirs()
                 }
+                
+                // Лимит всегда включен и всегда удаляем старые видео при достижении лимита
+                enforceStorageLimitLegacy(taxiSosDir, storageLimitBytes, sourceFile.length())
                 
                 val destFile = File(taxiSosDir, sourceFile.name)
                 sourceFile.copyTo(destFile, overwrite = true)
@@ -1731,12 +2247,132 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             Log.e("MainActivity", "Ошибка копирования видео в галерею: ${e.message}")
         }
     }
+    
+    // Проверка и очистка лимита памяти для Android 10+ (MediaStore API)
+    private fun enforceStorageLimitMediaStore(limitBytes: Long, newFileSize: Long) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return
+            
+            val resolver = contentResolver
+            val collection = android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            
+            // Получаем все видео из папки Taxi SOS
+            val projection = arrayOf(
+                android.provider.MediaStore.Video.Media._ID,
+                android.provider.MediaStore.Video.Media.DISPLAY_NAME,
+                android.provider.MediaStore.Video.Media.SIZE,
+                android.provider.MediaStore.Video.Media.DATE_ADDED,
+                android.provider.MediaStore.Video.Media.RELATIVE_PATH
+            )
+            
+            val selection = "${android.provider.MediaStore.Video.Media.RELATIVE_PATH} LIKE ?"
+            val selectionArgs = arrayOf("%Taxi Helper%")
+            val sortOrder = "${android.provider.MediaStore.Video.Media.DATE_ADDED} ASC"
+            
+            data class VideoInfo(val id: Long, val name: String, val size: Long, val dateAdded: Long)
+            val videos = mutableListOf<VideoInfo>()
+            var totalSize = 0L
+            
+            resolver.query(collection, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Video.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Video.Media.DISPLAY_NAME)
+                val sizeColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Video.Media.SIZE)
+                val dateColumn = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Video.Media.DATE_ADDED)
+                
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameColumn)
+                    // Проверяем, что это файл нашего приложения
+                    if (name.startsWith("taxi_helper_")) {
+                        val id = cursor.getLong(idColumn)
+                        val size = cursor.getLong(sizeColumn)
+                        val dateAdded = cursor.getLong(dateColumn)
+                        videos.add(VideoInfo(id, name, size, dateAdded))
+                        totalSize += size
+                    }
+                }
+            }
+            
+            Log.d("MainActivity", "Текущий размер видео в галерее: ${totalSize / 1024 / 1024} МБ, лимит: ${limitBytes / 1024 / 1024} МБ")
+            
+            // Удаляем старые файлы пока не освободим место для нового файла
+            var deletedCount = 0
+            while (totalSize + newFileSize > limitBytes && videos.isNotEmpty()) {
+                val oldest = videos.removeAt(0)
+                val deleteUri = android.content.ContentUris.withAppendedId(collection, oldest.id)
+                try {
+                    resolver.delete(deleteUri, null, null)
+                    totalSize -= oldest.size
+                    deletedCount++
+                    Log.d("MainActivity", "Удалено старое видео: ${oldest.name}, освобождено: ${oldest.size / 1024} КБ")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка удаления видео ${oldest.name}: ${e.message}")
+                }
+            }
+            
+            if (deletedCount > 0) {
+                Log.d("MainActivity", "Удалено $deletedCount старых видео для освобождения места")
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка проверки лимита памяти: ${e.message}")
+        }
+    }
+    
+    // Проверка и очистка лимита памяти для старых версий Android
+    private fun enforceStorageLimitLegacy(taxiSosDir: File, limitBytes: Long, newFileSize: Long) {
+        try {
+            // Получаем все файлы taxi_sos_*.mp4 из папки
+            val files = taxiSosDir.listFiles { f ->
+                f.isFile && f.name.startsWith("taxi_helper_") && f.name.endsWith(".mp4")
+            }?.sortedBy { it.lastModified() }?.toMutableList() ?: return
+            
+            var totalSize = files.sumOf { it.length() }
+            
+            Log.d("MainActivity", "Текущий размер видео (legacy): ${totalSize / 1024 / 1024} МБ, лимит: ${limitBytes / 1024 / 1024} МБ")
+            
+            // Удаляем старые файлы пока не освободим место для нового файла
+            var deletedCount = 0
+            while (totalSize + newFileSize > limitBytes && files.isNotEmpty()) {
+                val oldest = files.removeAt(0)
+                val freedSize = oldest.length()
+                if (oldest.delete()) {
+                    totalSize -= freedSize
+                    deletedCount++
+                    Log.d("MainActivity", "Удалено старое видео: ${oldest.name}, освобождено: ${freedSize / 1024} КБ")
+                    
+                    // Обновляем медиа-сканер
+                    MediaScannerConnection.scanFile(this, arrayOf(oldest.absolutePath), null, null)
+                } else {
+                    Log.e("MainActivity", "Не удалось удалить файл: ${oldest.name}")
+                }
+            }
+            
+            if (deletedCount > 0) {
+                Log.d("MainActivity", "Удалено $deletedCount старых видео для освобождения места")
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка проверки лимита памяти (legacy): ${e.message}")
+        }
+    }
 
     override fun onDestroy() {
         Log.d("MainActivity", "onDestroy вызван")
-        super.onDestroy()
         
-        // Отменяем все корутины
+        // Отписываемся от broadcast плиток
+        try {
+            unregisterReceiver(tileToggleReceiver)
+        } catch (_: Exception) {}
+        
+        super.onDestroy()
+
+        // Сначала корректно останавливаем процессы, затем отменяем scope.
+        // Иначе stopLiveLocation()/финализация сегмента могут не стартовать из-за отменённого scope.
+        try {
+            stop()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка остановки: ${e.message}")
+        }
+
+        // Отменяем корутины Activity после stop()
         try {
             ioScope.cancel()
         } catch (e: Exception) {
@@ -1746,13 +2382,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
             autoStopJob?.cancel()
             autoStopJob = null
         } catch (_: Exception) {}
-        
-        // Останавливаем все процессы
-        try {
-            stop()
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Ошибка остановки: ${e.message}")
-        }
         
         // Освобождаем ресурсы TDLib
         // Не нужно проверять инициализацию для lazy val
@@ -1863,6 +2492,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     }
 
     private suspend fun sendUserInfoMessage() {
+        // Используем флаги активных плиток вместо настроек
+        val sendToGroup = isTileSendToGroupActive
+        val sendToContacts = isTileSendToContactsActive && selectedContacts.isNotEmpty()
+        
+        // Если ни одно направление не активно - выходим
+        if (!sendToGroup && !sendToContacts) {
+            Log.d("MainActivity", "Пропускаем инфо-сообщение - нет активных направлений")
+            return
+        }
+
         try {
                 // Получаем данные из настроек
                 val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
@@ -1875,28 +2514,16 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 // Формируем информационное сообщение о пользователе
                 var userInfoMessage = getString(R.string.sos_start_header) + "\n\n"
                 
-                // 1. Имя и Фамилия из настроек (на первом месте)
-                val fullName = buildString {
-                    if (userName.isNotEmpty()) append(userName)
-                    if (userLastName.isNotEmpty()) {
-                        if (userName.isNotEmpty()) append(" ")
-                        append(userLastName)
-                    }
-                }
-                if (fullName.isNotEmpty()) {
-                    userInfoMessage += "👤 $fullName\n"
+                // 1. Только Имя (без фамилии)
+                if (userName.isNotEmpty()) {
+                    userInfoMessage += "👤 $userName\n"
                 }
                 
                 // 2. Ссылка на профиль в Telegram как @username
                 telegramUsername?.let { username ->
                     userInfoMessage += "📱 @$username\n"
                 }
-                
-                // 3. Телефон из Telegram
-                telegramPhone?.let { phone ->
-                    val formattedPhone = if (phone.startsWith("+")) phone else "+$phone"
-                    userInfoMessage += "📞 $formattedPhone\n"
-                }
+                // Телефон НЕ отправляем (по требованиям)
                 
                 // 4. Машина, цвет и регистрационный номер в одну строку
                 val carInfo = mutableListOf<String>()
@@ -1943,30 +2570,51 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                 
                 userInfoMessage += "\n📅 ${getString(R.string.date_label)}: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
                 
-                // Отправляем информационное сообщение
-                val messageBody = MultipartBody.Builder().setType(MultipartBody.FORM)
-                    .addFormDataPart("chat_id", TELEGRAM_CHAT_ID)
-                    .addFormDataPart("text", userInfoMessage)
-                    .addFormDataPart("parse_mode", "HTML")
-                    .build()
-                
-                val messageUrl = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
-                val messageRequest = Request.Builder()
-                    .url(messageUrl)
-                    .post(messageBody)
-                    .build()
-                
-                OkHttpClient().newCall(messageRequest).execute().close()
-                
-                // Если выбраны контакты, отправляем сообщение каждому из них
-                if (selectedContacts.isNotEmpty() && telegramUserId != null) {
-                    selectedContacts.forEach { contact ->
-                        sendMessageToContact(contact, userInfoMessage)
+                // 1) Отправка в группу (если включено) — отдельным блоком, чтобы не ломать контакты
+                if (sendToGroup) {
+                    try {
+                        val token = getTelegramBotToken()
+                        if (token.isNotBlank()) {
+                            val chatId = getResolvedBotChatId(token)
+                            val messageBody = MultipartBody.Builder().setType(MultipartBody.FORM)
+                                .addFormDataPart("chat_id", chatId)
+                                .addFormDataPart("text", userInfoMessage)
+                                .addFormDataPart("parse_mode", "HTML")
+                                .build()
+
+                            val messageUrl = "https://api.telegram.org/bot${token}/sendMessage"
+                            val messageRequest = Request.Builder()
+                                .url(messageUrl)
+                                .post(messageBody)
+                                .build()
+
+                            OkHttpClient.Builder()
+                                .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                                .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                                .build()
+                                .newCall(messageRequest)
+                                .execute()
+                                .close()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Ошибка отправки инфо-сообщения в группу: ${e.message}")
                     }
                 }
-                
+
+                // 2) Если активна плитка контактов — отправляем каждому
+                try {
+                    if (sendToContacts && telegramAuthHelper.isAuthenticated()) {
+                        selectedContacts.forEach { contact ->
+                            sendMessageToContact(contact, userInfoMessage)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка отправки инфо-сообщения контактам: ${e.message}")
+                }
+
         } catch (e: Exception) {
-            Log.e("MainActivity", "Ошибка при отправке информационного сообщения: ${e.message}")
+            Log.e("MainActivity", "Ошибка формирования информационного сообщения: ${e.message}")
         }
     }
     
@@ -2006,32 +2654,79 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun sendLiveLocation(){
         ioScope.launch {
             try {
+                // Используем флаги активных плиток
+                val sendToGroup = isTileSendToGroupActive
+                val sendToContacts = isTileSendToContactsActive && selectedContacts.isNotEmpty()
+                
+                // Если ни одно направление не активно - выходим
+                if (!sendToGroup && !sendToContacts) {
+                    return@launch
+                }
+                
                 val location = getFreshLocation()
-                if (liveLocationMessageId == null) {
-                    val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}" +
-                            "/sendLocation?chat_id=${TELEGRAM_CHAT_ID}" +
-                            "&latitude=${location?.latitude}" +
-                            "&longitude=${location?.longitude}" +
-                            "&live_period=${86400}"
-                    val response =
-                        OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute()
-                    val responseBody = response.body?.string()
-                    if (responseBody != null) {
-                        val messageIdRegex = """"message_id":(\d+)""".toRegex()
-                        val matchResult = messageIdRegex.find(responseBody)
-                        if (matchResult != null && matchResult.groupValues.size > 1) {
-                            liveLocationMessageId = matchResult.groupValues[1].toInt()
+                val token = getTelegramBotToken()
+                if (location == null) return@launch
+
+                // 1) Группа (Bot API) — только если плитка группы активна
+                if (sendToGroup && token.isNotBlank()) {
+                    val chatId = getResolvedBotChatId(token)
+                    if (liveLocationMessageId == null) {
+                        val url = "https://api.telegram.org/bot${token}" +
+                                "/sendLocation?chat_id=${chatId}" +
+                                "&latitude=${location.latitude}" +
+                                "&longitude=${location.longitude}" +
+                                "&live_period=${86400}"
+                        val response =
+                            OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute()
+                        val responseBody = response.body?.string()
+                        if (responseBody != null) {
+                            val messageIdRegex = """"message_id":(\d+)""".toRegex()
+                            val matchResult = messageIdRegex.find(responseBody)
+                            if (matchResult != null && matchResult.groupValues.size > 1) {
+                                liveLocationMessageId = matchResult.groupValues[1].toInt()
+                            }
+                        }
+                        response.close()
+                    } else {
+                        val url = "https://api.telegram.org/bot${token}" +
+                                "/editMessageLiveLocation" +
+                                "?chat_id=${chatId}" +
+                                "&message_id=${liveLocationMessageId}" +
+                                "&latitude=${location.latitude}" +
+                                "&longitude=${location.longitude}"
+                        OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute().close()
+                    }
+                }
+
+                // 2) Контакты (TDLib) — только если плитка контактов активна
+                if (sendToContacts && telegramAuthHelper.isAuthenticated()) {
+                    val lat = location.latitude
+                    val lon = location.longitude
+                    for (contact in selectedContacts) {
+                        val existing = contactLiveLocationState[contact.id]
+                        val chatId = existing?.first ?: run {
+                            suspendCoroutine<Long?> { cont ->
+                                telegramAuthHelper.createPrivateChat(contact.id) { chat ->
+                                    cont.resume(chat)
+                                }
+                            }
+                        } ?: continue
+
+                        val messageId = existing?.second
+                        val updatedId = suspendCoroutine<Long?> { cont ->
+                            telegramAuthHelper.sendOrUpdateLiveLocation(
+                                chatId = chatId,
+                                messageId = messageId,
+                                latitude = lat,
+                                longitude = lon,
+                                livePeriodSeconds = 86400,
+                                callback = { mid -> cont.resume(mid) }
+                            )
+                        }
+                        if (updatedId != null) {
+                            contactLiveLocationState[contact.id] = chatId to updatedId
                         }
                     }
-                    response.close()
-                } else {
-                    val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}" +
-                            "/editMessageLiveLocation" +
-                            "?chat_id=${TELEGRAM_CHAT_ID}" +
-                            "&message_id=${liveLocationMessageId}" +
-                            "&latitude=${location?.latitude}" +
-                            "&longitude=${location?.longitude}"
-                    OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute().close()
                 }
             } catch (e: Exception) {
                 Log.e("MainActivity", "Live location update failed: ${e.message}")
@@ -2042,23 +2737,41 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun stopLiveLocation() {
         ioScope.launch {
             try {
-                // Останавливаем live location, отправив финальное обновление координат
-                if (liveLocationMessageId != null) {
+                // 1) Останавливаем live location в группе (если она была запущена)
+                val token = getTelegramBotToken()
+                if (token.isNotBlank() && liveLocationMessageId != null) {
+                    val chatId = getResolvedBotChatId(token)
                     val location = getFreshLocation()
-                    val url = "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}" +
+                    val lat = location?.latitude
+                    val lon = location?.longitude
+                    val url = "https://api.telegram.org/bot${token}" +
                             "/stopMessageLiveLocation" +
-                            "?chat_id=${TELEGRAM_CHAT_ID}" +
+                            "?chat_id=${chatId}" +
                             "&message_id=${liveLocationMessageId}" +
-                            "&latitude=${location?.latitude}" +
-                            "&longitude=${location?.longitude}"
+                            (if (lat != null) "&latitude=$lat" else "") +
+                            (if (lon != null) "&longitude=$lon" else "")
                     OkHttpClient().newCall(Request.Builder().url(url).get().build()).execute().close()
                     Log.d("MainActivity", "Live location остановлен для сообщения ID: $liveLocationMessageId")
                 }
                 liveLocationMessageId = null
+
+                // 2) Останавливаем live location для контактов (TDLib)
+                if (contactLiveLocationState.isNotEmpty() && telegramAuthHelper.isAuthenticated()) {
+                    val snapshot = contactLiveLocationState.toMap()
+                    contactLiveLocationState.clear()
+                    snapshot.values.forEach { (chatId, messageId) ->
+                        try {
+                            telegramAuthHelper.stopLiveLocation(chatId, messageId)
+                        } catch (_: Exception) {}
+                    }
+                } else {
+                    contactLiveLocationState.clear()
+                }
             } catch (e: Exception) {
                 Log.e("MainActivity", "Ошибка при остановке live location: ${e.message}")
                 // В случае ошибки просто сбрасываем ID
                 liveLocationMessageId = null
+                contactLiveLocationState.clear()
             }
         }
     }
@@ -2073,7 +2786,6 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
     private fun loadUserSettings() {
         val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
         userName = sharedPrefs.getString("first_name", "") ?: ""
-        userLastName = sharedPrefs.getString("last_name", "") ?: ""
         userCar = sharedPrefs.getString("car_brand", "") ?: ""
         userCarColor = sharedPrefs.getString("car_color", "") ?: ""
     }
@@ -2641,13 +3353,19 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
         val quickTileMode = intent.getStringExtra("quick_tile_mode")
         val autoStart = intent.getBooleanExtra("auto_start", false)
         val quickTileAction = intent.getStringExtra("quick_tile_action")
+        val tileAction = intent.getStringExtra("tile_action")
+        val tileValue = intent.getBooleanExtra("tile_value", false)
         
         when {
+            // Обработка новых плиток (3 независимых переключателя)
+            tileAction != null -> {
+                handleTileToggle(tileAction, tileValue)
+            }
             quickTileAction == "stop_and_close" -> {
                 Log.d("MainActivity", "Получен сигнал закрытия через плитку")
                 isClosingFromTile = true
 
-                // Останавливаем приложение (блокирующе дождемся отправки последнего сегмента)
+                // Останавливаем приложение (НЕ блокируем UI: финализация/отправка последнего сегмента идёт в фоне)
                 if (isActive) {
                     Log.d("MainActivity", "Останавливаем активность")
                     stop()
@@ -2661,9 +3379,12 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     try {
                         StreamingTileService.setTileState(this, false)
                         VideoSegmentsTileService.setTileState(this, false)
+                        // Сбрасываем новые плитки
+                        SendToGroupTileService.setTileState(this, false)
+                        SendToContactsTileService.setTileState(this, false)
+                        SaveToGalleryTileService.setTileState(this, false)
                     } catch (_: Exception) {}
                     // Не уничтожаем singleton TelegramAuthHelper, так как он может использоваться в других Activity
-                    try { ioScope.cancel() } catch (_: Exception) {}
                 }, 1000)
             }
             quickTileMode != null && autoStart -> {
@@ -2695,6 +3416,201 @@ class MainActivity : AppCompatActivity(), ConnectChecker {
                     pendingWorkMode = mode
                 }
             }
+        }
+    }
+    
+    /**
+     * Обрабатывает переключение отдельных плиток
+     */
+    private fun handleTileToggle(action: String, value: Boolean) {
+        Log.d("MainActivity", "handleTileToggle: action=$action, value=$value")
+        
+        // Запоминаем, была ли это новая активация плитки (для отправки инфо-сообщения)
+        var newGroupActivated = false
+        var newContactsActivated = false
+        
+        when (action) {
+            "toggle_send_to_group" -> {
+                // Если активируем плитку группы - сбрасываем её счётчик и сообщения
+                if (value && !isTileSendToGroupActive) {
+                    sentSegmentCountGroup = 0
+                    botGroupMessageIds.clear()
+                    newGroupActivated = true
+                    Log.d("MainActivity", "Сброшен счётчик сегментов для группы")
+                }
+                isTileSendToGroupActive = value
+                Log.d("MainActivity", "Плитка 'В группу' = $value")
+            }
+            "toggle_send_to_contacts" -> {
+                // Если активируем плитку контактов - сбрасываем её счётчик и сообщения
+                if (value && !isTileSendToContactsActive) {
+                    sentSegmentCountContacts = 0
+                    contactMessageIds.clear()
+                    newContactsActivated = true
+                    Log.d("MainActivity", "Сброшен счётчик сегментов для контактов")
+                }
+                isTileSendToContactsActive = value
+                Log.d("MainActivity", "Плитка 'Контактам' = $value")
+            }
+            "toggle_save_to_gallery" -> {
+                isTileSaveToGalleryActive = value
+                Log.d("MainActivity", "Плитка 'В галерею' = $value")
+            }
+        }
+        
+        // Проверяем, есть ли хотя бы одна активная плитка
+        val anyTileActive = isTileSendToGroupActive || isTileSendToContactsActive || isTileSaveToGalleryActive
+        
+        Log.d("MainActivity", "Состояние плиток: group=$isTileSendToGroupActive, contacts=$isTileSendToContactsActive, gallery=$isTileSaveToGalleryActive, anyActive=$anyTileActive")
+        
+        if (anyTileActive) {
+            // Если есть хотя бы одна активная плитка - запускаем запись (если еще не запущена)
+            if (!isActive) {
+                Log.d("MainActivity", "Запускаем запись (активирована плитка)")
+                currentWorkMode = WorkMode.VIDEO_SEGMENTS
+                
+                if (isSurfaceReady) {
+                    start()
+                } else {
+                    Log.d("MainActivity", "Surface не готов, откладываем автостарт")
+                    pendingAutoStart = true
+                    pendingWorkMode = WorkMode.VIDEO_SEGMENTS
+                }
+            } else {
+                // Приложение уже активно - отправляем инфо-сообщение и геолокацию для новой плитки
+                if (newGroupActivated || newContactsActivated) {
+                    Log.d("MainActivity", "Приложение уже активно, отправляем инфо для новой плитки: group=$newGroupActivated, contacts=$newContactsActivated")
+                    ioScope.launch {
+                        // Отправляем инфо-сообщение для новых направлений
+                        sendUserInfoMessageForNewTile(newGroupActivated, newContactsActivated)
+                        // Геолокация уже работает в цикле startLiveLocation, она сама проверяет флаги
+                    }
+                }
+            }
+        } else {
+            // Если все плитки выключены - останавливаем запись
+            if (isActive) {
+                Log.d("MainActivity", "Останавливаем запись (все плитки выключены)")
+                isClosingFromTile = true
+                stop()
+                
+                // Закрываем приложение с задержкой
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try { finishAndRemoveTask() } catch (_: Exception) {}
+                }, 1200)
+            }
+        }
+    }
+    
+    /**
+     * Отправляет инфо-сообщение только для вновь активированных направлений
+     */
+    private suspend fun sendUserInfoMessageForNewTile(toGroup: Boolean, toContacts: Boolean) {
+        if (!toGroup && !toContacts) return
+        
+        try {
+            // Получаем данные из настроек
+            val sharedPrefs = getSharedPreferences("taxi_sos_prefs", Context.MODE_PRIVATE)
+            val registrationNumber = sharedPrefs.getString("registration_number", "") ?: ""
+            val taxiNumber = sharedPrefs.getString("taxi_number", "") ?: ""
+            val telegramUsername = sharedPrefs.getString("telegram_username", null)
+            
+            // Формируем информационное сообщение о пользователе
+            var userInfoMessage = getString(R.string.sos_start_header) + "\n\n"
+            
+            // 1. Только Имя (без фамилии)
+            if (userName.isNotEmpty()) {
+                userInfoMessage += "👤 $userName\n"
+            }
+            
+            // 2. Ссылка на профиль в Telegram
+            telegramUsername?.let { username ->
+                userInfoMessage += "📱 @$username\n"
+            }
+            
+            // 3. Машина и цвет
+            val carInfo = mutableListOf<String>()
+            if (userCar.isNotEmpty()) carInfo.add(userCar)
+            if (userCarColor.isNotEmpty()) carInfo.add(userCarColor)
+            if (carInfo.isNotEmpty()) {
+                userInfoMessage += "${carInfo.joinToString(", ")}\n"
+            }
+            
+            // 4. Регистрационный номер
+            if (registrationNumber.isNotEmpty()) {
+                val formattedReg = "<b><u>${htmlEscape(registrationNumber)}</u></b>"
+                userInfoMessage += "🚗 ${getString(R.string.registration_number)}: $formattedReg\n"
+            }
+
+            // 5. Бортовой номер
+            if (taxiNumber.isNotEmpty()) {
+                val formattedTaxi = "<b><u>${htmlEscape(taxiNumber)}</u></b>"
+                userInfoMessage += "🚕 ${getString(R.string.taxi_board_number)}: $formattedTaxi\n"
+            }
+            
+            // Режим работы
+            userInfoMessage += "\n📹 ${getString(R.string.mode_label)}: "
+            userInfoMessage += getString(R.string.mode_video_desc)
+            val segmentDurationSec = getSharedPreferences(PREFS_TAXI, Context.MODE_PRIVATE)
+                .getInt(KEY_SEGMENT_DURATION_SECONDS, MIN_SEGMENT_DURATION_SECONDS)
+                .coerceIn(MIN_SEGMENT_DURATION_SECONDS, MAX_SEGMENT_DURATION_SECONDS)
+            val formattedDuration = formatSegmentDuration(segmentDurationSec)
+            userInfoMessage += "\n" + getString(R.string.segment_duration_prefix, formattedDuration)
+            
+            if (toContacts && selectedContacts.isNotEmpty()) {
+                userInfoMessage += "\n\n📱 ${getString(R.string.selected_contacts_sending_info)}"
+            }
+            
+            userInfoMessage += "\n📅 ${getString(R.string.date_label)}: ${java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}"
+            
+            // Отправляем в группу (если это новая активация группы)
+            if (toGroup) {
+                try {
+                    val token = getTelegramBotToken()
+                    if (token.isNotBlank()) {
+                        val chatId = getResolvedBotChatId(token)
+                        val messageBody = MultipartBody.Builder().setType(MultipartBody.FORM)
+                            .addFormDataPart("chat_id", chatId)
+                            .addFormDataPart("text", userInfoMessage)
+                            .addFormDataPart("parse_mode", "HTML")
+                            .build()
+
+                        val messageUrl = "https://api.telegram.org/bot${token}/sendMessage"
+                        val messageRequest = Request.Builder()
+                            .url(messageUrl)
+                            .post(messageBody)
+                            .build()
+
+                        OkHttpClient.Builder()
+                            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                            .build()
+                            .newCall(messageRequest)
+                            .execute()
+                            .close()
+                        
+                        Log.d("MainActivity", "Инфо-сообщение отправлено в группу (новая активация)")
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка отправки инфо-сообщения в группу: ${e.message}")
+                }
+            }
+
+            // Отправляем контактам (если это новая активация контактов)
+            if (toContacts && selectedContacts.isNotEmpty() && telegramAuthHelper.isAuthenticated()) {
+                try {
+                    selectedContacts.forEach { contact ->
+                        sendMessageToContact(contact, userInfoMessage)
+                    }
+                    Log.d("MainActivity", "Инфо-сообщение отправлено контактам (новая активация)")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Ошибка отправки инфо-сообщения контактам: ${e.message}")
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Ошибка формирования информационного сообщения для новой плитки: ${e.message}")
         }
     }
 

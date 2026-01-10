@@ -225,3 +225,4 @@ T=5s:    Остановка завершена
 
 AI Assistant (Cursor)
 
+

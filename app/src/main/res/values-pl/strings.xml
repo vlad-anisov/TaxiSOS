@@ -1,16 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Taxi SOS</string>
+    <string name="app_name">Taxi Helper</string>
     
     <string-array name="work_modes">
         <item>Segmenty wideo</item>
         <item>Transmisja na żywo</item>
     </string-array>
 
+    <string-array name="bluetooth_actions">
+        <item>Segmenty wideo</item>
+    </string-array>
+
     <string-array name="languages">
         <item>Русский</item>
         <item>English</item>
         <item>Polski</item>
+        <item>Українська</item>
+        <item>Беларуская</item>
+    </string-array>
+
+    <string-array name="language_codes">
+        <item>ru</item>
+        <item>en</item>
+        <item>pl</item>
+        <item>uk</item>
+        <item>be</item>
     </string-array>
 
     <string name="settings">Ustawienia</string>
@@ -29,10 +43,23 @@
     <string name="select_contacts">Wybierz kontakty</string>
     <string name="no_contacts_found">Nie znaleziono kontaktów</string>
 
+    
+    <string name="send_to_group">Wysyłać do grupy</string>
+    <string name="tribute_auth_required">Zaloguj się do Telegram, aby sprawdzić subskrypcję</string>
+    <string name="tribute_subscription_required">Brak dostępu. Wymagana aktywna subskrypcja Tribute</string>
+
     <string name="tile_streaming">🎦 Transmisja na żywo</string>
     <string name="tile_video_segments">📹 Segmenty wideo</string>
     <string name="tile_stop_streaming">🔴 Zatrzymaj transmisję</string>
     <string name="tile_stop_recording">🔴 Zatrzymaj nagrywanie</string>
+    
+    <!-- Nowe kafelki -->
+    <string name="tile_send_to_group">📤 Do grupy</string>
+    <string name="tile_send_to_group_active">✅ Do grupy</string>
+    <string name="tile_send_to_contacts">👥 Do kontaktów</string>
+    <string name="tile_send_to_contacts_active">✅ Do kontaktów</string>
+    <string name="tile_save_to_gallery">💾 Do galerii</string>
+    <string name="tile_save_to_gallery_active">✅ Do galerii</string>
 
     <string name="first_name">Imię</string>
     <string name="last_name">Nazwisko</string>
@@ -79,17 +106,40 @@
     <string name="invalid_code">Nieprawidłowy kod weryfikacyjny</string>
     <string name="restart_required">Aby zastosować język, aplikacja zostanie ponownie uruchomiona</string>
 
-    <string name="sos_start_header">🚨 ROZPOCZĘTO NAGŁĄ TRANSMISJĘ 🚨</string>
+    <string name="sos_start_header">⚠️ PROSZĘ O UWAGĘ ⚠️</string>
     <string name="mode_label">Tryb</string>
-    <string name="mode_video_desc">Wysyłanie segmentów wideo. Segmenty będą automatycznie wysyłane do tego czatu.</string>
+    <string name="mode_video_desc">Automatyczne wysyłanie wideo.</string>
     <string name="mode_streaming_desc">Transmisja na żywo. Aby oglądać transmisję, naciśnij \"Dołącz\" na górze kanału.</string>
-    <string name="selected_contacts_sending_info">Wybrane kontakty będą otrzymywać segmenty wideo.</string>
+    <string name="selected_contacts_sending_info">Wybrane kontakty będą otrzymywać wideo.</string>
     <string name="date_label">Data</string>
     <string name="segment_duration_prefix">Długość segmentu: %1$s</string>
+
     
-    <!-- Długość segmentu wideo -->
+    <string name="channel_not_selected">Kanał nie wybrany</string>
+    <string name="unknown_channel">Nieznany kanał</string>
+    <string name="change">Zmień</string>
+    <string name="authorized_as_format">Zalogowano jako: %1$s</string>
+    <string name="selected_contacts_count_format">Wybrane kontakty: %1$d</string>
+    <string name="and_more_format">I jeszcze %1$d...</string>
+    <string name="enter_registration_hint">Wprowadź numer rejestracyjny</string>
+    <string name="enter_taxi_board_hint">Wprowadź numer boczny taksówki</string>
+    <string name="enter_car_brand_hint">Wprowadź markę samochodu</string>
+    <string name="enter_car_color_hint">Wprowadź kolor samochodu</string>
+    <string name="choose_channel">Wybierz kanał</string>
+    <string name="loading_channels">Ładowanie kanałów...</string>
+    <string name="failed_load_channels">Nie udało się załadować kanałów</string>
+    <string name="selected_channel_toast_format">Wybrany kanał: %1$s</string>
+    <string name="telegram_auth_required">Wymagana autoryzacja Telegram</string>
+    <string name="loading_contacts">Ładowanie kontaktów...</string>
+    <string name="logout_done">Wylogowano</string>
+    <string name="telegram_error_format">Błąd Telegram: %1$s</string>
+    
+    
     <string name="video_segment_length">Długość segmentu wideo</string>
     <string name="save_segments_to_gallery">Zapisuj segmenty wideo w galerii</string>
+    <string name="storage_limit_enable">Ogranicz wykorzystanie pamięci</string>
+    <string name="storage_limit_delete_old">Usuń stare wideo po osiągnięciu limitu</string>
+    <string name="storage_limit_value_format">Maksimum: %d GB</string>
     <string name="video_segment_length_hint">Od 10 sekund do 5 minut</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minuta</item>
@@ -105,7 +155,7 @@
     </plurals>
     <string name="minutes_seconds_format">%1$s %2$s</string>
     
-    <!-- Ustawienia przycisku Bluetooth -->
+    
     <string name="bluetooth_button_settings">Ustawienia przycisku Bluetooth</string>
     <string name="bluetooth_button_enable">Włącz obsługę przycisku Bluetooth</string>
     <string name="bluetooth_button_action">Akcja po naciśnięciu przycisku Bluetooth</string>
@@ -118,13 +168,13 @@
     <string name="accessibility_settings_title">Ustawienia ułatwień dostępu</string>
     <string name="accessibility_enable_instructions">Znajdź \"Taxi SOS\" na liście i włącz usługę</string>
     
-    <!-- Status usługi ułatwień dostępu -->
+    
     <string name="accessibility_required_button">⚠️ WYMAGANE: Włącz usługę</string>
     <string name="accessibility_enabled_button">✓ Usługa włączona (dotknij, aby skonfigurować)</string>
     <string name="accessibility_enabled_info">✅ Usługa ułatwień dostępu jest włączona i działa</string>
     <string name="accessibility_disabled_info">⚠️ OBOWIĄZKOWO: Usługa ułatwień dostępu NIE jest włączona!\n\nBez niej przycisk Bluetooth NIE będzie działać.</string>
     
-    <!-- Wybór urządzenia Bluetooth -->
+    
     <string name="select_bluetooth_button">Wybierz przycisk Bluetooth</string>
     <string name="selected_device_prefix">✓ Wybrano: %s</string>
     <string name="ble_devices_dialog_title">Podłączone urządzenia BLE</string>

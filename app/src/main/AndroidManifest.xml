@@ -88,21 +88,35 @@
             android:foregroundServiceType="camera|microphone|location" />
 
         <!-- Quick Settings Tiles -->
+        <!-- Плитка: Отправка в группу -->
         <service
-            android:name=".StreamingTileService"
-            android:icon="@android:drawable/ic_media_play"
-            android:label="@string/tile_streaming"
+            android:name=".SendToGroupTileService"
+            android:icon="@android:drawable/ic_menu_send"
+            android:label="@string/tile_send_to_group"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
-
+        
+        <!-- Плитка: Отправка контактам -->
         <service
-            android:name=".VideoSegmentsTileService"
-            android:icon="@android:drawable/ic_menu_camera"
-            android:label="@string/tile_video_segments"
+            android:name=".SendToContactsTileService"
+            android:icon="@android:drawable/ic_menu_my_calendar"
+            android:label="@string/tile_send_to_contacts"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        
+        <!-- Плитка: Сохранение в галерею -->
+        <service
+            android:name=".SaveToGalleryTileService"
+            android:icon="@android:drawable/ic_menu_gallery"
+            android:label="@string/tile_save_to_gallery"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>

@@ -721,6 +721,260 @@ class TelegramAuthHelper private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * Проверяет, является ли текущий пользователь участником указанного чата/канала.
+     * Используем это как проверку доступа (Tribute добавляет/удаляет участников).
+     */
+    fun isCurrentUserMemberOfChat(chatId: Long, callback: (Boolean) -> Unit) {
+        try {
+            if (!isAuthenticated()) {
+                mainHandler.post { callback(false) }
+                return
+            }
+            val uid = getCurrentUserId()
+            if (uid == 0L) {
+                mainHandler.post { callback(false) }
+                return
+            }
+
+            val memberId = TdApi.MessageSenderUser(uid)
+            client?.send(TdApi.GetChatMember(chatId, memberId)) { result ->
+                when (result) {
+                    is TdApi.ChatMember -> {
+                        val ok = when (result.status) {
+                            is TdApi.ChatMemberStatusCreator,
+                            is TdApi.ChatMemberStatusAdministrator,
+                            is TdApi.ChatMemberStatusMember -> true
+                            else -> false
+                        }
+                        mainHandler.post { callback(ok) }
+                    }
+                    is TdApi.Error -> {
+                        // 404/USER_NOT_PARTICIPANT и т.п. считаем отсутствием доступа
+                        Log.w(TAG, "GetChatMember error: ${result.message}")
+                        mainHandler.post { callback(false) }
+                    }
+                    else -> {
+                        mainHandler.post { callback(false) }
+                    }
+                }
+            } ?: run {
+                mainHandler.post { callback(false) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "isCurrentUserMemberOfChat error: ${e.message}")
+            mainHandler.post { callback(false) }
+        }
+    }
+
+    /**
+     * Отправляет live location (если messageId == null) или обновляет её (если messageId != null).
+     * callback возвращает id созданного сообщения для последующих обновлений.
+     */
+    fun sendOrUpdateLiveLocation(
+        chatId: Long,
+        messageId: Long?,
+        latitude: Double,
+        longitude: Double,
+        livePeriodSeconds: Int,
+        callback: (Long?) -> Unit
+    ) {
+        try {
+            if (!isAuthenticated()) {
+                mainHandler.post { callback(null) }
+                return
+            }
+            val loc = TdApi.Location(latitude, longitude, 0.0)
+            if (messageId == null) {
+                val content = TdApi.InputMessageLocation(loc, livePeriodSeconds, 0, 0)
+                val sendOptions = TdApi.MessageSendOptions().apply {
+                    disableNotification = false
+                    fromBackground = false
+                    protectContent = false
+                    updateOrderOfInstalledStickerSets = false
+                    schedulingState = null
+                    effectId = 0
+                    sendingId = 0
+                    onlyPreview = false
+                }
+                val msg = TdApi.SendMessage().apply {
+                    this.chatId = chatId
+                    messageThreadId = 0
+                    replyTo = null
+                    options = sendOptions
+                    replyMarkup = null
+                    inputMessageContent = content
+                }
+                client?.send(msg) { result ->
+                    when (result) {
+                        is TdApi.Message -> mainHandler.post { callback(result.id) }
+                        is TdApi.Error -> {
+                            Log.e(TAG, "send live location error: ${result.message}")
+                            mainHandler.post { callback(null) }
+                        }
+                        else -> mainHandler.post { callback(null) }
+                    }
+                } ?: mainHandler.post { callback(null) }
+            } else {
+                val edit = TdApi.EditMessageLiveLocation(
+                    chatId,
+                    messageId,
+                    null,
+                    loc,
+                    livePeriodSeconds,
+                    0,
+                    0
+                )
+                client?.send(edit) { result ->
+                    when (result) {
+                        is TdApi.Message -> mainHandler.post { callback(result.id) }
+                        is TdApi.Error -> {
+                            Log.e(TAG, "edit live location error: ${result.message}")
+                            mainHandler.post { callback(null) }
+                        }
+                        else -> mainHandler.post { callback(null) }
+                    }
+                } ?: mainHandler.post { callback(null) }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "sendOrUpdateLiveLocation error: ${e.message}")
+            mainHandler.post { callback(null) }
+        }
+    }
+
+    fun stopLiveLocation(chatId: Long, messageId: Long) {
+        try {
+            if (!isAuthenticated()) return
+            val stop = TdApi.EditMessageLiveLocation(chatId, messageId, null, null, 0, 0, 0)
+            client?.send(stop) { _ -> }
+        } catch (e: Exception) {
+            Log.e(TAG, "stopLiveLocation error: ${e.message}")
+        }
+    }
+
+    /**
+     * Удаляет сообщения в чате.
+     * @param chatId ID чата
+     * @param messageIds массив ID сообщений для удаления
+     * @param revoke true - удалить у всех, false - удалить только у себя
+     * @param callback колбек с результатом (успех/неудача)
+     */
+    fun deleteMessages(chatId: Long, messageIds: LongArray, revoke: Boolean = true, callback: ((Boolean) -> Unit)? = null) {
+        try {
+            if (!isAuthenticated()) {
+                Log.w(TAG, "deleteMessages: не авторизован")
+                mainHandler.post { callback?.invoke(false) }
+                return
+            }
+            
+            Log.d(TAG, "Удаление ${messageIds.size} сообщений из чата $chatId")
+            
+            val deleteRequest = TdApi.DeleteMessages(chatId, messageIds, revoke)
+            client?.send(deleteRequest) { result ->
+                when (result) {
+                    is TdApi.Ok -> {
+                        Log.d(TAG, "Сообщения успешно удалены")
+                        mainHandler.post { callback?.invoke(true) }
+                    }
+                    is TdApi.Error -> {
+                        Log.e(TAG, "Ошибка удаления сообщений: ${result.message}")
+                        mainHandler.post { callback?.invoke(false) }
+                    }
+                    else -> {
+                        Log.w(TAG, "Неожиданный результат удаления: $result")
+                        mainHandler.post { callback?.invoke(false) }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "deleteMessages error: ${e.message}")
+            mainHandler.post { callback?.invoke(false) }
+        }
+    }
+
+    /**
+     * Отправляет видео в чат и возвращает ID отправленного сообщения через callback.
+     */
+    fun sendVideoWithMessageId(chatId: Long, videoPath: String, callback: ((Boolean, Long?, String?) -> Unit)? = null) {
+        Log.d(TAG, "Отправка видео в чат $chatId: $videoPath (с возвратом messageId)")
+        
+        if (!isAuthenticated()) {
+            Log.e(TAG, "Попытка отправить видео без авторизации")
+            callback?.invoke(false, null, "Пользователь не авторизован")
+            return
+        }
+        
+        val videoFile = java.io.File(videoPath)
+        if (!videoFile.exists()) {
+            Log.e(TAG, "Файл не существует: $videoPath")
+            callback?.invoke(false, null, "Файл не найден: $videoPath")
+            return
+        }
+        
+        if (!videoFile.canRead()) {
+            Log.e(TAG, "Нет доступа для чтения файла: $videoPath")
+            callback?.invoke(false, null, "Нет доступа к файлу: $videoPath")
+            return
+        }
+        
+        Log.d(TAG, "Файл найден, размер: ${videoFile.length()} байт")
+        
+        val inputFile = TdApi.InputFileLocal()
+        inputFile.path = videoFile.absolutePath
+        
+        val captionText = TdApi.FormattedText()
+        captionText.text = ""
+        captionText.entities = arrayOf()
+        
+        val inputMessageContent = TdApi.InputMessageVideo()
+        inputMessageContent.video = inputFile
+        inputMessageContent.thumbnail = null
+        inputMessageContent.addedStickerFileIds = intArrayOf()
+        inputMessageContent.duration = 0
+        inputMessageContent.width = 0
+        inputMessageContent.height = 0
+        inputMessageContent.supportsStreaming = true
+        inputMessageContent.caption = captionText
+        inputMessageContent.showCaptionAboveMedia = false
+        inputMessageContent.selfDestructType = null
+        inputMessageContent.hasSpoiler = false
+        
+        val sendOptions = TdApi.MessageSendOptions()
+        sendOptions.disableNotification = false
+        sendOptions.fromBackground = false
+        sendOptions.protectContent = false
+        sendOptions.updateOrderOfInstalledStickerSets = false
+        sendOptions.schedulingState = null
+        sendOptions.effectId = 0
+        sendOptions.sendingId = 0
+        sendOptions.onlyPreview = false
+        
+        val sendMessage = TdApi.SendMessage()
+        sendMessage.chatId = chatId
+        sendMessage.messageThreadId = 0
+        sendMessage.replyTo = null
+        sendMessage.options = sendOptions
+        sendMessage.replyMarkup = null
+        sendMessage.inputMessageContent = inputMessageContent
+        
+        client?.send(sendMessage) { result ->
+            when (result) {
+                is TdApi.Message -> {
+                    Log.d(TAG, "Видео успешно отправлено, ID: ${result.id}")
+                    mainHandler.post {
+                        callback?.invoke(true, result.id, null)
+                    }
+                }
+                is TdApi.Error -> {
+                    Log.e(TAG, "Ошибка отправки видео: ${result.message}")
+                    mainHandler.post {
+                        callback?.invoke(false, null, result.message)
+                    }
+                }
+            }
+        }
+    }
+
     fun destroy() {
         Log.d(TAG, "Уничтожение TelegramAuthHelper")
         try {

@@ -34,30 +34,36 @@ object LanguageManager {
             "ru" -> "ru"
             "en" -> "en"
             "pl" -> "pl"
+            "uk" -> "uk"
+            "be" -> "be"
             else -> "ru" // По умолчанию русский
         }
     }
-    
+
     fun applyLanguage(context: Context) {
         val selectedLanguage = getSelectedLanguage(context)
         setLocale(context, selectedLanguage)
     }
-    
+
     fun getLanguageIndex(context: Context): Int {
         val selectedLanguage = getSelectedLanguage(context)
         return when (selectedLanguage) {
             "ru" -> 0
             "en" -> 1
             "pl" -> 2
+            "uk" -> 3
+            "be" -> 4
             else -> 0
         }
     }
-    
+
     fun getLanguageCodeByIndex(index: Int): String {
         return when (index) {
             0 -> "ru"
             1 -> "en"
             2 -> "pl"
+            3 -> "uk"
+            4 -> "be"
             else -> "ru"
         }
     }

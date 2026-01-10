@@ -1,22 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Taxi SOS</string>
+    <string name="app_name">Taxi Helper</string>
     
     <string-array name="work_modes">
         <item>Видео сегменты</item>
         <item>Видео трансляция</item>
+    </string-array>
+
+    <string-array name="bluetooth_actions">
+        <item>Видео сегменты</item>
     </string-array>
     
     <string-array name="languages">
         <item>Русский</item>
         <item>English</item>
         <item>Polski</item>
+        <item>Українська</item>
+        <item>Беларуская</item>
     </string-array>
-    
+
     <string-array name="language_codes">
         <item>ru</item>
         <item>en</item>
         <item>pl</item>
+        <item>uk</item>
+        <item>be</item>
     </string-array>
     
     <!-- Основные строки интерфейса -->
@@ -34,12 +42,26 @@
     <string name="search_contacts">Поиск контактов...</string>
     <string name="select_contacts">Выберите контакты</string>
     <string name="no_contacts_found">Контакты не найдены</string>
+
+    <string name="send_to_group">Отправлять в группу</string>
+
+    <!-- Доступ по подписке (Tribute) -->
+    <string name="tribute_auth_required">Для проверки подписки нужно войти в Telegram</string>
+    <string name="tribute_subscription_required">Доступ закрыт. Нужна активная подписка (Tribute) на канал</string>
     
     <!-- Плитки быстрого запуска -->
     <string name="tile_streaming">🎦 Прямая трансляция</string>
     <string name="tile_video_segments">📹 Видеосегменты</string>
     <string name="tile_stop_streaming">🔴 Остановить трансляцию</string>
     <string name="tile_stop_recording">🔴 Остановить запись</string>
+    
+    <!-- Новые плитки -->
+    <string name="tile_send_to_group">📤 В группу</string>
+    <string name="tile_send_to_group_active">✅ В группу</string>
+    <string name="tile_send_to_contacts">👥 Контактам</string>
+    <string name="tile_send_to_contacts_active">✅ Контактам</string>
+    <string name="tile_save_to_gallery">💾 В галерею</string>
+    <string name="tile_save_to_gallery_active">✅ В галерею</string>
     
     <!-- Поля пользователя -->
     <string name="first_name">Имя</string>
@@ -90,11 +112,11 @@
     <string name="restart_required">Для применения языка требуется перезапуск приложения</string>
 
     <!-- Сообщения для Telegram и метки -->
-    <string name="sos_start_header">🚨 НАЧАЛО ЭКСТРЕННОЙ ТРАНСЛЯЦИИ 🚨</string>
+    <string name="sos_start_header">⚠️ ПРОШУ ВНИМАНИЯ ⚠️</string>
     <string name="mode_label">Режим работы</string>
-    <string name="mode_video_desc">Отправка видео сегментов. Видео сегменты будут автоматически отправляться в этот чат.</string>
+    <string name="mode_video_desc">Автоматическая отправка видео.</string>
     <string name="mode_streaming_desc">Прямая трансляция. Для просмотра трансляции нажмите \"Вступить\" сверху канала.</string>
-    <string name="selected_contacts_sending_info">Выбранным контактам будут отправляться видео сегменты.</string>
+    <string name="selected_contacts_sending_info">Выбранным контактам будет отправляться видео.</string>
     <string name="date_label">Дата</string>
     <string name="segment_duration_prefix">Длительность сегмента: %1$s</string>
 
@@ -122,6 +144,9 @@
     <!-- Длительность видеосегмента -->
     <string name="video_segment_length">Длительность видео сегмента</string>
     <string name="save_segments_to_gallery">Сохранять видео сегменты в галерею</string>
+    <string name="storage_limit_enable">Ограничить использование памяти</string>
+    <string name="storage_limit_delete_old">Удалять старые видео при достижении лимита</string>
+    <string name="storage_limit_value_format">Максимум: %d ГБ</string>
     <string name="video_segment_length_hint">От 10 секунд до 5 минут</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d минута</item>

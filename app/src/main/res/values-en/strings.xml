@@ -1,25 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Taxi SOS</string>
+    <string name="app_name">Taxi Helper</string>
 
     <string-array name="work_modes">
         <item>Video segments</item>
         <item>Live streaming</item>
     </string-array>
 
+    <string-array name="bluetooth_actions">
+        <item>Video segments</item>
+    </string-array>
+
     <string-array name="languages">
         <item>Русский</item>
         <item>English</item>
         <item>Polski</item>
+        <item>Українська</item>
+        <item>Беларуская</item>
     </string-array>
 
     <string-array name="language_codes">
         <item>ru</item>
         <item>en</item>
         <item>pl</item>
+        <item>uk</item>
+        <item>be</item>
     </string-array>
 
-    <!-- Main interface strings -->
+    
     <string name="settings">Settings</string>
     <string name="work_mode">Work mode</string>
     <string name="telegram_channel">Telegram channel</string>
@@ -35,13 +43,26 @@
     <string name="select_contacts">Select contacts</string>
     <string name="no_contacts_found">No contacts found</string>
 
-    <!-- Quick launch tiles -->
+    
+    <string name="send_to_group">Send to group</string>
+    <string name="tribute_auth_required">Sign in to Telegram to verify subscription</string>
+    <string name="tribute_subscription_required">Access denied. An active Tribute subscription is required</string>
+
+    
     <string name="tile_streaming">🎦 Live streaming</string>
     <string name="tile_video_segments">📹 Video segments</string>
     <string name="tile_stop_streaming">🔴 Stop streaming</string>
     <string name="tile_stop_recording">🔴 Stop recording</string>
+    
+    <!-- New tiles -->
+    <string name="tile_send_to_group">📤 To group</string>
+    <string name="tile_send_to_group_active">✅ To group</string>
+    <string name="tile_send_to_contacts">👥 To contacts</string>
+    <string name="tile_send_to_contacts_active">✅ To contacts</string>
+    <string name="tile_save_to_gallery">💾 To gallery</string>
+    <string name="tile_save_to_gallery_active">✅ To gallery</string>
 
-    <!-- User fields -->
+    
     <string name="first_name">First name</string>
     <string name="last_name">Last name</string>
     <string name="enter_first_name_hint">Enter first name</string>
@@ -52,7 +73,7 @@
     <string name="car_color">Car color</string>
     <string name="phone_from_telegram">Phone (from Telegram)</string>
 
-    <!-- Telegram authorization -->
+    
     <string name="telegram_auth_title">Telegram login</string>
     <string name="enter_phone_description">Enter your phone number registered in Telegram</string>
     <string name="phone_hint">+48 (XXX) XXX-XXX</string>
@@ -82,23 +103,23 @@
     <string name="domain_hint">https://yourapp.com</string>
     <string name="domain_note">Note: This domain must be configured in @BotFather using /setdomain</string>
 
-    <!-- Messages -->
+    
     <string name="auth_success">Authorization successful</string>
     <string name="auth_error">Authorization error</string>
     <string name="invalid_phone">Invalid phone number</string>
     <string name="invalid_code">Invalid verification code</string>
     <string name="restart_required">App will be restarted to apply language</string>
 
-    <!-- Telegram message strings -->
-    <string name="sos_start_header">🚨 EMERGENCY STREAM STARTED 🚨</string>
+    
+    <string name="sos_start_header">⚠️ PLEASE PAY ATTENTION ⚠️</string>
     <string name="mode_label">Mode</string>
-    <string name="mode_video_desc">Sending video segments. Video segments will be automatically sent to this chat.</string>
+    <string name="mode_video_desc">Automatic video sending.</string>
     <string name="mode_streaming_desc">Live streaming. To watch the stream, tap \"Join\" at the top of the channel.</string>
-    <string name="selected_contacts_sending_info">Selected contacts will receive video segments.</string>
+    <string name="selected_contacts_sending_info">Selected contacts will receive video.</string>
     <string name="date_label">Date</string>
     <string name="segment_duration_prefix">Segment duration: %1$s</string>
 
-    <!-- Settings and misc -->
+    
     <string name="channel_not_selected">Channel not selected</string>
     <string name="unknown_channel">Unknown channel</string>
     <string name="change">Change</string>
@@ -119,9 +140,12 @@
     <string name="logout_done">Logged out</string>
     <string name="telegram_error_format">Telegram error: %1$s</string>
     
-    <!-- Video segment length -->
+    
     <string name="video_segment_length">Video segment length</string>
     <string name="save_segments_to_gallery">Save video segments to gallery</string>
+    <string name="storage_limit_enable">Limit storage usage</string>
+    <string name="storage_limit_delete_old">Delete old videos when limit is reached</string>
+    <string name="storage_limit_value_format">Maximum: %d GB</string>
     <string name="video_segment_length_hint">From 10 seconds to 5 minutes</string>
     <plurals name="minutes_plurals">
         <item quantity="one">%d minute</item>
@@ -133,7 +157,7 @@
     </plurals>
     <string name="minutes_seconds_format">%1$s %2$s</string>
     
-    <!-- Bluetooth button settings -->
+    
     <string name="bluetooth_button_settings">Bluetooth button settings</string>
     <string name="bluetooth_button_enable">Enable Bluetooth button processing</string>
     <string name="bluetooth_button_action">Action on Bluetooth button press</string>
@@ -146,13 +170,13 @@
     <string name="accessibility_settings_title">Accessibility settings</string>
     <string name="accessibility_enable_instructions">Find \"Taxi SOS\" in the list and enable the service</string>
     
-    <!-- Accessibility service status -->
+    
     <string name="accessibility_required_button">⚠️ REQUIRED: Enable service</string>
     <string name="accessibility_enabled_button">✓ Service enabled (tap to configure)</string>
     <string name="accessibility_enabled_info">✅ Accessibility service is enabled and working</string>
     <string name="accessibility_disabled_info">⚠️ MANDATORY: Accessibility service is NOT enabled!\n\nWithout it, the Bluetooth button will NOT work.</string>
     
-    <!-- Bluetooth device selection -->
+    
     <string name="select_bluetooth_button">Select Bluetooth button</string>
     <string name="selected_device_prefix">✓ Selected: %s</string>
     <string name="ble_devices_dialog_title">Connected BLE devices</string>
@@ -161,4 +185,3 @@
     <string name="ble_device_saved">BLE device saved: %s</string>
     <string name="error_showing_devices">Error displaying devices: %s</string>
 </resources>
-
