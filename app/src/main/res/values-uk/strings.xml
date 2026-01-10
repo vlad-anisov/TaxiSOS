@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Taxi Helper</string>
+
+    <string-array name="work_modes">
+        <item>Відеосегменти</item>
+        <item>Пряма трансляція</item>
+    </string-array>
+
+    <string-array name="bluetooth_actions">
+        <item>Відеосегменти</item>
+    </string-array>
+
+    <string-array name="languages">
+        <item>Русский</item>
+        <item>English</item>
+        <item>Polski</item>
+        <item>Українська</item>
+        <item>Беларуская</item>
+    </string-array>
+
+    <string-array name="language_codes">
+        <item>ru</item>
+        <item>en</item>
+        <item>pl</item>
+        <item>uk</item>
+        <item>be</item>
+    </string-array>
+
+    
+    <string name="settings">Налаштування</string>
+    <string name="work_mode">Режим роботи</string>
+    <string name="telegram_channel">Telegram канал</string>
+    <string name="telegram_auth">Авторизація Telegram</string>
+    <string name="login_another_account">Увійти в інший акаунт Telegram</string>
+    <string name="contact_selection">Вибір контактів</string>
+    <string name="user_info">Інформація про користувача</string>
+    <string name="language_setting">Мова застосунку</string>
+    <string name="done">Готово</string>
+    <string name="save">Зберегти</string>
+    <string name="cancel">Скасувати</string>
+    <string name="search_contacts">Пошук контактів...</string>
+    <string name="select_contacts">Виберіть контакти</string>
+    <string name="no_contacts_found">Контакти не знайдено</string>
+
+    
+    <string name="send_to_group">Надсилати в групу</string>
+    <string name="tribute_auth_required">Увійдіть у Telegram, щоб перевірити підписку</string>
+    <string name="tribute_subscription_required">Доступ заборонено. Потрібна активна підписка Tribute</string>
+
+    
+    <string name="tile_streaming">🎦 Пряма трансляція</string>
+    <string name="tile_video_segments">📹 Відеосегменти</string>
+    <string name="tile_stop_streaming">🔴 Зупинити трансляцію</string>
+    <string name="tile_stop_recording">🔴 Зупинити запис</string>
+    
+    <!-- Нові плитки -->
+    <string name="tile_send_to_group">📤 До групи</string>
+    <string name="tile_send_to_group_active">✅ До групи</string>
+    <string name="tile_send_to_contacts">👥 Контактам</string>
+    <string name="tile_send_to_contacts_active">✅ Контактам</string>
+    <string name="tile_save_to_gallery">💾 До галереї</string>
+    <string name="tile_save_to_gallery_active">✅ До галереї</string>
+
+    
+    <string name="first_name">Ім\'я</string>
+    <string name="last_name">Прізвище</string>
+    <string name="enter_first_name_hint">Введіть ім\'я</string>
+    <string name="enter_last_name_hint">Введіть прізвище</string>
+    <string name="registration_number">Реєстраційний номер</string>
+    <string name="taxi_board_number">Бортовий номер таксі</string>
+    <string name="car_brand">Марка автомобіля</string>
+    <string name="car_color">Колір автомобіля</string>
+    <string name="phone_from_telegram">Телефон (з Telegram)</string>
+
+    
+    <string name="telegram_auth_title">Авторизація в Telegram</string>
+    <string name="enter_phone_description">Введіть ваш номер телефону, зареєстрований у Telegram</string>
+    <string name="phone_hint">+380 (XX) XXX-XX-XX</string>
+    <string name="send_code">Надіслати код</string>
+    <string name="enter_code_title">Введіть код підтвердження</string>
+    <string name="enter_code_description">Код надіслано на ваш номер телефону</string>
+    <string name="code_hint">Код підтвердження</string>
+    <string name="confirm">Підтвердити</string>
+    <string name="back">Назад</string>
+    <string name="sign_in">Увійти</string>
+    <string name="password_hint">Пароль</string>
+    <string name="enter_password">Введіть пароль</string>
+    <string name="two_factor_title">Двофакторна автентифікація</string>
+    <string name="two_factor_description">Введіть пароль двофакторної автентифікації</string>
+    <string name="auth_cancelled">Авторизацію скасовано</string>
+    <string name="logout_title">Вихід з акаунту</string>
+    <string name="logout_message">Ви впевнені, що хочете вийти з акаунту Telegram?</string>
+    <string name="logout">Вийти</string>
+    <string name="retry">Повторити</string>
+    <string name="ok">ОК</string>
+    <string name="user_info_title">Інформація про користувача</string>
+    <string name="bot_setup_title">Налаштування Telegram бота</string>
+    <string name="bot_setup_message">Для роботи авторизації через Telegram необхідно:\n\n1. Створити бота через @BotFather\n2. Отримати токен бота\n3. Налаштувати домен в налаштуваннях бота командою /setdomain\n4. Вказати коректні дані в застосунку\n\nДетальна інструкція доступна в документації Telegram Bot API.</string>
+    <string name="understood">Зрозуміло</string>
+    <string name="domain_setup_title">Налаштування домену</string>
+    <string name="domain_setup_info">Введіть домен для OAuth callback (наприклад: https://yourapp.com)</string>
+    <string name="domain_hint">https://yourapp.com</string>
+    <string name="domain_note">Примітка: Цей домен має бути налаштований в @BotFather командою /setdomain</string>
+
+    
+    <string name="auth_success">Авторизація успішна</string>
+    <string name="auth_error">Помилка авторизації</string>
+    <string name="invalid_phone">Невірний номер телефону</string>
+    <string name="invalid_code">Невірний код підтвердження</string>
+    <string name="restart_required">Для застосування мови потрібен перезапуск застосунку</string>
+
+    
+    <string name="sos_start_header">⚠️ ПРОШУ УВАГИ ⚠️</string>
+    <string name="mode_label">Режим роботи</string>
+    <string name="mode_video_desc">Автоматичне надсилання відео.</string>
+    <string name="mode_streaming_desc">Пряма трансляція. Для перегляду трансляції натисніть \"Приєднатися\" вгорі каналу.</string>
+    <string name="selected_contacts_sending_info">Вибраним контактам надсилатиметься відео.</string>
+    <string name="date_label">Дата</string>
+    <string name="segment_duration_prefix">Тривалість сегмента: %1$s</string>
+
+    
+    <string name="channel_not_selected">Канал не вибрано</string>
+    <string name="unknown_channel">Невідомий канал</string>
+    <string name="change">Змінити</string>
+    <string name="authorized_as_format">Авторизовано як: %1$s</string>
+    <string name="selected_contacts_count_format">Вибрані контакти: %1$d</string>
+    <string name="and_more_format">І ще %1$d...</string>
+    <string name="login_via_telegram">Увійти через Telegram</string>
+    <string name="enter_registration_hint">Введіть реєстраційний номер</string>
+    <string name="enter_taxi_board_hint">Введіть бортовий номер таксі</string>
+    <string name="enter_car_brand_hint">Введіть марку автомобіля</string>
+    <string name="enter_car_color_hint">Введіть колір автомобіля</string>
+    <string name="choose_channel">Виберіть канал</string>
+    <string name="loading_channels">Завантаження списку каналів...</string>
+    <string name="failed_load_channels">Не вдалося завантажити список каналів</string>
+    <string name="selected_channel_toast_format">Вибрано канал: %1$s</string>
+    <string name="telegram_auth_required">Необхідна авторизація в Telegram</string>
+    <string name="loading_contacts">Завантажуємо контакти...</string>
+    <string name="logout_done">Вихід виконано</string>
+    <string name="telegram_error_format">Помилка Telegram: %1$s</string>
+
+    
+    <string name="video_segment_length">Тривалість відеосегмента</string>
+    <string name="save_segments_to_gallery">Зберігати відеосегменти в галерею</string>
+    <string name="storage_limit_enable">Обмежити використання пам\'яті</string>
+    <string name="storage_limit_delete_old">Видаляти старі відео при досягненні ліміту</string>
+    <string name="storage_limit_value_format">Максимум: %d ГБ</string>
+    <string name="video_segment_length_hint">Від 10 секунд до 5 хвилин</string>
+    <plurals name="minutes_plurals">
+        <item quantity="one">%d хвилина</item>
+        <item quantity="few">%d хвилини</item>
+        <item quantity="many">%d хвилин</item>
+        <item quantity="other">%d хвилин</item>
+    </plurals>
+    <plurals name="seconds_plurals">
+        <item quantity="one">%d секунда</item>
+        <item quantity="few">%d секунди</item>
+        <item quantity="many">%d секунд</item>
+        <item quantity="other">%d секунд</item>
+    </plurals>
+    <string name="minutes_seconds_format">%1$s %2$s</string>
+
+    
+    <string name="bluetooth_button_settings">Налаштування Bluetooth кнопки</string>
+    <string name="bluetooth_button_enable">Увімкнути обробку Bluetooth-кнопки</string>
+    <string name="bluetooth_button_action">Дія при натисканні Bluetooth кнопки</string>
+    <string name="bluetooth_button_enabled_toast">Bluetooth-кнопку активовано</string>
+    <string name="bluetooth_button_disabled_toast">Bluetooth-кнопку деактивовано</string>
+    <string name="bluetooth_button_info">🎯 Натисніть Bluetooth-кнопку ОДИН РАЗ для запуску вибраної дії. При повторному натисканні - зупиняється.\n\n⚠️ ВАЖЛИВО: Потрібно увімкнути службу спеціальних можливостей (кнопка нижче). Вона відрізняє Bluetooth-кнопку від фізичних кнопок пристрою.\n\n✅ Гучність НЕ буде скидатися\n✅ Фізичні кнопки працюють як зазвичай</string>
+    <string name="bluetooth_button_enable_accessibility">✓ Увімкнути службу спеціальних можливостей</string>
+    <string name="bluetooth_button_accessibility_info">⚠️ Служба спеціальних можливостей ОБОВ\'ЯЗКОВА для роботи функції. Вона дозволяє відрізнити натискання Bluetooth-кнопки від фізичних кнопок пристрою.</string>
+    <string name="accessibility_service_description">Служба для перехоплення натискань Bluetooth-кнопки в застосунку Taxi SOS. Дозволяє швидко запускати екстрений запис/трансляцію.</string>
+    <string name="accessibility_settings_title">Налаштування спеціальних можливостей</string>
+    <string name="accessibility_enable_instructions">Знайдіть \"Taxi SOS\" у списку та увімкніть службу</string>
+
+    
+    <string name="accessibility_required_button">⚠️ ПОТРІБНО: Увімкнути службу</string>
+    <string name="accessibility_enabled_button">✓ Службу увімкнено (натисніть для налаштування)</string>
+    <string name="accessibility_enabled_info">✅ Службу спеціальних можливостей увімкнено та працює</string>
+    <string name="accessibility_disabled_info">⚠️ ОБОВ\'ЯЗКОВО: Службу спеціальних можливостей НЕ увімкнено!\n\nБез неї Bluetooth-кнопка НЕ буде працювати.</string>
+
+    
+    <string name="select_bluetooth_button">Вибрати Bluetooth кнопку</string>
+    <string name="selected_device_prefix">✓ Вибрано: %s</string>
+    <string name="ble_devices_dialog_title">Підключені BLE-пристрої</string>
+    <string name="no_ble_devices">Немає підключених BLE-пристроїв</string>
+    <string name="device_no_name">(без назви)</string>
+    <string name="ble_device_saved">BLE-пристрій збережено: %s</string>
+    <string name="error_showing_devices">Помилка відображення пристроїв: %s</string>
+</resources>
